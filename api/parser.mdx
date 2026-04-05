@@ -1,0 +1,280 @@
+---
+title: "Parser API"
+description: "Register custom escape sequence handlers for CSI, DCS, ESC, OSC, and APC sequences."
+---
+
+The parser API gives you low-level access to xterm.js's VT sequence parser. Use it to handle custom or application-specific escape sequences that xterm.js does not implement natively — or to intercept and override built-in sequences.
+
+The parser is accessible via `terminal.parser`.
+
+<Note>
+  The parser API is part of the proposed (experimental) API surface. Set `allowProposedApi: true` in your terminal options to use it without errors.
+</Note>
+
+## Overview
+
+xterm.js processes terminal data through a streaming parser that recognizes VT escape sequences. Each sequence has a defined structure:
+
+```
+ESC  I..I  F               — ESC sequence
+CSI  Prefix  P..P  I..I  F — Control Sequence Introducer
+DCS  Prefix  P..P  I..I  F  data  ST — Device Control String
+OSC  ident  ;  data  ST    — Operating System Command
+APC  ident  data  ST       — Application Program Command
+```
+
+When you register a handler, it is tried first (most recently registered handler wins). Return `true` to signal that your handler consumed the sequence; return `false` to fall through to the previous handler.
+
+## IFunctionIdentifier
+
+Used to identify CSI, DCS, and ESC sequences.
+
+<ResponseField name="final" type="string" required>
+  The final byte of the sequence. Must be in range `\x40`–`\x7e` for CSI and DCS, `\x30`–`\x7e` for ESC.
+</ResponseField>
+
+<ResponseField name="prefix" type="string">
+  An optional prefix byte, in range `\x3c`–`\x3f`. Only valid for CSI and DCS sequences.
+</ResponseField>
+
+<ResponseField name="intermediates" type="string">
+  Optional intermediate bytes, in range `\x20`–`\x2f`. Valid for CSI, DCS, and ESC. Limit to one intermediate byte in practice.
+</ResponseField>
+
+## IParser methods
+
+### registerCsiHandler
+
+```typescript
+registerCsiHandler(
+  id: IFunctionIdentifier,
+  callback: (params: (number | number[])[]) => boolean | Promise<boolean>
+): IDisposable
+```
+
+Registers a handler for CSI escape sequences (`CSI Prefix P..P I..I F`).
+
+<ParamField path="id" type="IFunctionIdentifier" required>
+  The function identifier. For example, `{ final: 'm' }` for SGR color sequences.
+</ParamField>
+
+<ParamField path="callback" type="(params: (number | number[])[]) => boolean | Promise<boolean>" required>
+  Called with the parsed numeric parameters. Subparameters are represented as nested arrays. Return `true` if handled, `false` to fall through to the previous handler.
+</ParamField>
+
+Returns an `IDisposable` — call `.dispose()` to remove the handler.
+
+```typescript
+// Handle a custom CSI sequence: CSI ? 42 h
+const disposable = term.parser.registerCsiHandler({ prefix: '?', final: 'h' }, params => {
+  if (params[0] === 42) {
+    console.log('Custom mode 42 enabled');
+    return true; // handled
+  }
+  return false; // let xterm.js handle other ? h sequences
+});
+```
+
+---
+
+### registerDcsHandler
+
+```typescript
+registerDcsHandler(
+  id: IFunctionIdentifier,
+  callback: (data: string, params: (number | number[])[]) => boolean | Promise<boolean>
+): IDisposable
+```
+
+Registers a handler for DCS (Device Control String) escape sequences.
+
+<ParamField path="id" type="IFunctionIdentifier" required>
+  The function identifier. For example, `{ intermediates: '$', final: 'q' }` for DECRQSS.
+</ParamField>
+
+<ParamField path="callback" type="(data: string, params: (number | number[])[]) => boolean | Promise<boolean>" required>
+  Called once when the DCS sequence completes successfully. Receives the full data payload string and numeric parameters. DCS payloads are buffered up to 10 MB.
+</ParamField>
+
+Returns an `IDisposable`.
+
+---
+
+### registerEscHandler
+
+```typescript
+registerEscHandler(
+  id: IFunctionIdentifier,
+  handler: () => boolean | Promise<boolean>
+): IDisposable
+```
+
+Registers a handler for ESC (escape) sequences.
+
+<ParamField path="id" type="IFunctionIdentifier" required>
+  The function identifier. For example, `{ intermediates: '%', final: 'G' }` for default charset selection.
+</ParamField>
+
+<ParamField path="handler" type="() => boolean | Promise<boolean>" required>
+  Called when the sequence is encountered. Return `true` if handled, `false` to fall through.
+</ParamField>
+
+Returns an `IDisposable`.
+
+---
+
+### registerOscHandler
+
+```typescript
+registerOscHandler(
+  ident: number,
+  callback: (data: string) => boolean | Promise<boolean>
+): IDisposable
+```
+
+Registers a handler for OSC (Operating System Command) sequences identified by their numeric identifier.
+
+<ParamField path="ident" type="number" required>
+  The OSC command number (the numeric value before the first `;`). For example, `8` for OSC 8 hyperlinks, `0` or `2` for title changes.
+</ParamField>
+
+<ParamField path="callback" type="(data: string) => boolean | Promise<boolean>" required>
+  Called once when the sequence completes. Receives the full OSC data string (the part after the first `;`). OSC payloads are buffered up to 10 MB. Return `true` if handled, `false` to fall through.
+</ParamField>
+
+Returns an `IDisposable`.
+
+```typescript
+// Handle OSC 9 (iTerm2 shell integration notifications)
+term.parser.registerOscHandler(9, data => {
+  console.log('iTerm2 notification:', data);
+  return true;
+});
+```
+
+---
+
+### registerApcHandler
+
+```typescript
+registerApcHandler(
+  ident: number,
+  callback: (data: string) => boolean | Promise<boolean>
+): IDisposable
+```
+
+Registers a handler for APC (Application Program Command) sequences.
+
+<ParamField path="ident" type="number" required>
+  The identifier character code. For example, `71` (the character code for `'G'`) for the Kitty graphics protocol.
+</ParamField>
+
+<ParamField path="callback" type="(data: string) => boolean | Promise<boolean>" required>
+  Called once when the APC sequence completes. Receives the data string (excluding the identifier character). APC payloads are buffered up to 10 MB. Return `true` if handled, `false` to fall through.
+</ParamField>
+
+Returns an `IDisposable`.
+
+## Sync vs. async handlers
+
+xterm.js processes all parser actions synchronously by default. You can return a `Promise<boolean>` from any handler, which will pause input processing until the promise resolves. This enables backpressure from async operations.
+
+<Warning>
+  Async handlers significantly reduce throughput. The parser pauses all input processing while waiting for the promise. Use async handlers only when the action itself is inherently async (e.g., fetching data from a server). Do not assume stable terminal state across `await` points — user actions like resize can still happen.
+</Warning>
+
+```typescript
+// Sync handler (preferred)
+term.parser.registerCsiHandler({ final: 'z' }, params => {
+  handleCustomSequence(params);
+  return true;
+});
+
+// Async handler (use sparingly)
+term.parser.registerOscHandler(1337, async data => {
+  const result = await fetchApplicationData(data);
+  applyResult(result);
+  return true;
+});
+```
+
+## Custom CSI sequences and IWindowOptions
+
+The `IWindowOptions` API (enabled via `terminal.options.windowOptions`) documents how to implement window manipulation sequences using the parser. Here is the pattern from the xterm.js typings:
+
+```typescript
+// Implement specific window manipulation sequences (CSI Ps ; Ps ; Ps t)
+term.parser.registerCsiHandler({ final: 't' }, params => {
+  const ps = params[0];
+  switch (ps) {
+    case 14: {
+      // Report text area size in pixels (Ps=14)
+      const width = term.dimensions?.css.canvas.width ?? 0;
+      const height = term.dimensions?.css.canvas.height ?? 0;
+      term.input(`\x1b[4;${Math.round(height)};${Math.round(width)}t`, false);
+      return true;
+    }
+    case 18: {
+      // Report text area size in characters (Ps=18)
+      term.input(`\x1b[8;${term.rows};${term.cols}t`, false);
+      return true;
+    }
+  }
+  return false;
+});
+```
+
+## Custom OSC handler example
+
+```typescript
+// Handle a custom application protocol via OSC 6969
+const disposable = term.parser.registerOscHandler(6969, data => {
+  try {
+    const payload = JSON.parse(data);
+    switch (payload.type) {
+      case 'notify':
+        showNotification(payload.message);
+        return true;
+      case 'progress':
+        updateProgressBar(payload.value);
+        return true;
+    }
+  } catch {
+    // Not valid JSON, ignore
+  }
+  return false;
+});
+
+// Clean up when done
+disposable.dispose();
+```
+
+## Handler precedence
+
+Multiple handlers can be registered for the same sequence identifier. They are tried in reverse registration order (most recently registered first). If a handler returns `false`, the next handler in the chain is tried. The built-in xterm.js handler is tried last.
+
+```typescript
+// Handler B is tried first
+const handlerA = term.parser.registerCsiHandler({ final: 'm' }, params => {
+  // SGR handler A
+  return false; // fall through
+});
+
+const handlerB = term.parser.registerCsiHandler({ final: 'm' }, params => {
+  // SGR handler B — tried first
+  if (params[0] === 999) {
+    return true; // consume custom SGR 999
+  }
+  return false; // fall through for everything else
+});
+```
+
+## Sequence address space
+
+When creating custom sequences, follow ECMA-48 recommendations to avoid clashing with existing sequences:
+
+- Use **private address space** — for CSI: prefix bytes `\x3c`–`\x3f` (`<`, `=`, `>`, `?`) or final bytes `\x70`–`\x7e` (`p`–`~`).
+- Use **at most one intermediate byte** in practice.
+- Test against other terminal emulators to ensure they safely ignore your sequence.
+
+For OSC and APC sequences, use high numeric identifiers that are not assigned by any standards body.

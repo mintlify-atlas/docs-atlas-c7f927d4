@@ -1,0 +1,73 @@
+---
+title: "Introduction"
+description: "xterm.js is a terminal emulator component for the browser and Node.js — the same one powering VS Code, Hyper, and JupyterLab."
+keywords: ["xterm.js", "terminal emulator", "browser terminal", "xterm", "vt100"]
+---
+
+xterm.js (`@xterm/xterm`) is a frontend library that lets you embed a fully-featured terminal emulator in any web application. It handles VT100/xterm escape sequences, mouse events, Unicode, and GPU-accelerated rendering — so you can focus on connecting it to your backend.
+
+<Note>
+  **xterm.js is not a terminal application you can download and run.** It is also not a shell like `bash` or `zsh`. It is a library that renders terminal output in the browser and captures user input. To run actual commands, you connect it to a process — typically via [node-pty](https://github.com/microsoft/node-pty) on the server side.
+</Note>
+
+## Key features
+
+<CardGroup cols={2}>
+  <Card title="VT100 / xterm support" icon="terminal" href="/quickstart">
+    Full VT100, VT220, and xterm escape sequence support: SGR colors, mouse reports, alternate screen buffer, and modern extensions including the kitty keyboard protocol.
+  </Card>
+  <Card title="WebGL renderer" icon="bolt" href="/addons/webgl">
+    An optional GPU-accelerated renderer via `@xterm/addon-webgl` delivers smooth, frame-rate-level output even for heavy workloads — large file output, `htop`, and beyond.
+  </Card>
+  <Card title="Rich Unicode support" icon="globe" href="/guides/accessibility">
+    Handles CJK double-width characters, emoji, IME composition, and grapheme clusters. Includes optional GB18030-compliant glyph rescaling.
+  </Card>
+  <Card title="Zero dependencies" icon="feather" href="/installation">
+    The core library ships with no production dependencies. You only add what you need through optional, first-party addons.
+  </Card>
+  <Card title="Addon system" icon="puzzle-piece" href="/addons/overview">
+    Extend xterm.js with official addons for search, image rendering, clipboard access, web links, WebGL rendering, ligatures, and more.
+  </Card>
+  <Card title="Accessibility" icon="universal-access" href="/guides/accessibility">
+    Screen reader mode exposes ARIA live regions for NVDA (Windows) and VoiceOver (macOS). Minimum contrast ratio enforcement keeps text legible.
+  </Card>
+  <Card title="Headless Node.js mode" icon="server" href="/guides/headless">
+    `@xterm/headless` is a stripped-down build for Node.js with no DOM dependency. Use it to track terminal state server-side and restore sessions on reconnection.
+  </Card>
+  <Card title="Terminal apps just work" icon="check" href="/guides/connecting-a-pty">
+    Works with `bash`, `vim`, `tmux`, curses-based applications, and mouse events — anything a real terminal supports.
+  </Card>
+</CardGroup>
+
+## Who uses xterm.js
+
+xterm.js is the terminal engine behind many widely used applications:
+
+- **[VS Code](https://code.visualstudio.com/)** — the integrated terminal in Microsoft's editor and all its forks
+- **[Hyper](https://hyper.is/)** — the web-technology-based terminal application
+- **[Tabby](https://tabby.sh/)** — a highly configurable terminal emulator
+- **[JupyterLab](https://github.com/jupyterlab/jupyterlab)** — the interactive computing environment for Jupyter notebooks
+- **[Azure Cloud Shell](https://shell.azure.com)** — Microsoft's browser-based admin shell
+- **[Replit](https://replit.com)** — the collaborative browser-based IDE
+- **[Coder](https://github.com/coder/coder)** — self-hosted remote development environments
+- **[Eclipse Che](https://www.eclipse.org/che)** — the cloud-native developer workspace server
+- **[Proxmox VE](https://www.proxmox.com/en/proxmox-ve)** — enterprise virtualization platform container terminals
+- **[Portainer](https://portainer.io)** — Docker management UI
+
+[Many more projects](https://github.com/xtermjs/xterm.js/network/dependents?package_id=UGFja2FnZS0xNjYzMjc4OQ%3D%3D) use xterm.js across cloud IDEs, SSH clients, IoT dashboards, and CI platforms.
+
+## The npm package
+
+xterm.js is distributed exclusively through npm as `@xterm/xterm`. The current stable version is **6.0.0**.
+
+```bash
+npm install @xterm/xterm
+```
+
+Both ESM and CommonJS builds are included. TypeScript types are bundled at `typings/xterm.d.ts` and resolved automatically.
+
+## Next step
+
+<Card title="Quickstart" icon="rocket" href="/quickstart">
+  Get a working terminal in your browser in under five minutes.
+</Card>

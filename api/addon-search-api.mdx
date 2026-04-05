@@ -1,0 +1,309 @@
+---
+title: "Search addon API"
+description: "API reference for SearchAddon from @xterm/addon-search — find text in the terminal buffer with optional decorations and overview ruler highlights."
+keywords: ["xterm", "SearchAddon", "search", "findNext", "findPrevious", "decorations", "highlight"]
+---
+
+`SearchAddon` adds text search to a terminal instance. It can search forwards and backwards through the terminal's scrollback buffer, optionally highlighting all matches with colored decorations and marking them in the overview ruler.
+
+## Installation
+
+<Tabs>
+  <Tab title="npm">
+    ```bash
+    npm install @xterm/addon-search
+    ```
+  </Tab>
+  <Tab title="yarn">
+    ```bash
+    yarn add @xterm/addon-search
+    ```
+  </Tab>
+</Tabs>
+
+## Constructor
+
+```typescript
+new SearchAddon(options?: Partial<ISearchAddonOptions>)
+```
+
+Creates a new `SearchAddon` instance. All constructor options are optional. Pass the instance to `terminal.loadAddon()` to activate it.
+
+```typescript
+import { Terminal } from '@xterm/xterm';
+import { SearchAddon } from '@xterm/addon-search';
+
+const terminal = new Terminal();
+terminal.open(document.getElementById('terminal'));
+
+const searchAddon = new SearchAddon();
+terminal.loadAddon(searchAddon);
+```
+
+## ISearchAddonOptions
+
+Options passed to the `SearchAddon` constructor.
+
+<ParamField path="highlightLimit" type="number" default="1000">
+  Maximum number of matches that will be highlighted with decorations when a search is performed. When the number of matches in the buffer exceeds this limit, `onDidChangeResults` reports `resultIndex: -1`. Lowering this value improves performance in buffers with many matches.
+</ParamField>
+
+## Methods
+
+### activate
+
+```typescript
+activate(terminal: Terminal): void
+```
+
+Called automatically by `terminal.loadAddon()`. Do not call this directly.
+
+### dispose
+
+```typescript
+dispose(): void
+```
+
+Tears down the addon, removes all decorations, and releases all event listeners.
+
+### findNext
+
+```typescript
+findNext(term: string, searchOptions?: ISearchOptions): boolean
+```
+
+Searches forwards from the current selection (or from the top if there is no selection) for the next match of `term`. Wraps around to the beginning of the buffer when the end is reached.
+
+Returns `true` if a match was found, `false` otherwise.
+
+<ParamField path="term" type="string" required>
+  The text to search for. Interpreted as a literal string unless `searchOptions.regex` is `true`.
+</ParamField>
+
+<ParamField path="searchOptions" type="ISearchOptions">
+  Options controlling how the search is performed. See [ISearchOptions](#isearchoptions) below.
+</ParamField>
+
+### findPrevious
+
+```typescript
+findPrevious(term: string, searchOptions?: ISearchOptions): boolean
+```
+
+Searches backwards from the current selection for the previous match of `term`. Wraps around to the end of the buffer when the beginning is reached.
+
+Returns `true` if a match was found, `false` otherwise.
+
+<ParamField path="term" type="string" required>
+  The text to search for.
+</ParamField>
+
+<ParamField path="searchOptions" type="ISearchOptions">
+  Options controlling how the search is performed. The `incremental` option has no effect on `findPrevious`.
+</ParamField>
+
+### clearDecorations
+
+```typescript
+clearDecorations(): void
+```
+
+Removes all search match decorations and clears the current selection. Call this when the search UI is closed to restore the terminal to its unstyled state.
+
+### clearActiveDecoration
+
+```typescript
+clearActiveDecoration(): void
+```
+
+Removes only the active match decoration (the highlighted decoration rendered on top of the current selection). The match highlight for all other results is preserved.
+
+<Tip>
+  Call `clearActiveDecoration()` in response to the search input's `blur` event. This reveals the terminal's native selection underneath the active match highlight when the user moves focus away from the search field.
+</Tip>
+
+```typescript
+searchInput.addEventListener('blur', () => {
+  searchAddon.clearActiveDecoration();
+});
+```
+
+## Events
+
+### onBeforeSearch
+
+```typescript
+readonly onBeforeSearch: IEvent<void>
+```
+
+Fires immediately before a search is performed (before `findNext` or `findPrevious` begins processing). Use this to show a loading indicator for large buffers.
+
+### onAfterSearch
+
+```typescript
+readonly onAfterSearch: IEvent<void>
+```
+
+Fires immediately after a search completes. Use this to hide a loading indicator or to read the updated selection.
+
+### onDidChangeResults
+
+```typescript
+readonly onDidChangeResults: IEvent<ISearchResultChangeEvent>
+```
+
+Fires when the set of search results changes. This event only fires when `decorations` are enabled in the `ISearchOptions` passed to `findNext` or `findPrevious`. The event value is an `ISearchResultChangeEvent` object.
+
+<Warning>
+  `onDidChangeResults` does not fire for plain searches (those without decorations). You must pass `decorations` in `ISearchOptions` to receive this event.
+</Warning>
+
+## ISearchResultChangeEvent
+
+<ParamField path="resultIndex" type="number" required>
+  The zero-based index of the currently active (selected) match. Set to `-1` when the number of matches exceeds the `highlightLimit` configured in `ISearchAddonOptions`.
+</ParamField>
+
+<ParamField path="resultCount" type="number" required>
+  The total number of matches found in the buffer for the current search term.
+</ParamField>
+
+## ISearchOptions
+
+Options passed to `findNext` and `findPrevious`.
+
+<ParamField path="regex" type="boolean" default="false">
+  When `true`, the `term` argument is interpreted as a JavaScript regular expression. Invalid regex patterns will throw.
+</ParamField>
+
+<ParamField path="wholeWord" type="boolean" default="false">
+  When `true`, only matches surrounded by non-word characters (spaces, parentheses, underscores, etc.) are returned.
+</ParamField>
+
+<ParamField path="caseSensitive" type="boolean" default="false">
+  When `true`, the search is case-sensitive.
+</ParamField>
+
+<ParamField path="incremental" type="boolean" default="false">
+  When `true`, `findNext` expands the current selection if the selection still matches the new term, instead of jumping to the next occurrence. This produces a more natural feel when the user is still typing in the search field. Has no effect on `findPrevious`.
+</ParamField>
+
+<ParamField path="decorations" type="ISearchDecorationOptions">
+  When provided, all matches are highlighted with colored decorations and the active match is highlighted separately. Enables the `onDidChangeResults` event. See [ISearchDecorationOptions](#isearchdecorationoptions) below.
+</ParamField>
+
+## ISearchDecorationOptions
+
+Configures the visual appearance of match highlights. All color values must use the `#RRGGBB` hex format where noted.
+
+<Note>
+  The overview ruler (the thin strip to the right of the scrollbar) is only visible when `IScrollbarOptions.width` is set on the terminal.
+</Note>
+
+<ParamField path="matchBackground" type="string">
+  Background color applied to all non-active matches. Must use `#RRGGBB` format.
+</ParamField>
+
+<ParamField path="matchBorder" type="string">
+  Border color applied to all non-active matches.
+</ParamField>
+
+<ParamField path="matchOverviewRuler" type="string" required>
+  The color used to mark non-active matches in the overview ruler.
+</ParamField>
+
+<ParamField path="activeMatchBackground" type="string">
+  Background color applied to the currently active match. Must use `#RRGGBB` format.
+</ParamField>
+
+<ParamField path="activeMatchBorder" type="string">
+  Border color applied to the currently active match.
+</ParamField>
+
+<ParamField path="activeMatchColorOverviewRuler" type="string" required>
+  The color used to mark the active match in the overview ruler.
+</ParamField>
+
+## Complete search UI example
+
+The following example wires up a search input with forward/backward navigation, live result counting, and decoration highlighting.
+
+```typescript
+import { Terminal } from '@xterm/xterm';
+import { SearchAddon, ISearchOptions } from '@xterm/addon-search';
+
+const terminal = new Terminal({
+  scrollbar: { width: 15 }, // required for overview ruler
+});
+terminal.open(document.getElementById('terminal'));
+
+const searchAddon = new SearchAddon({ highlightLimit: 1000 });
+terminal.loadAddon(searchAddon);
+
+// DOM elements
+const searchInput = document.getElementById('search-input') as HTMLInputElement;
+const prevBtn = document.getElementById('btn-prev') as HTMLButtonElement;
+const nextBtn = document.getElementById('btn-next') as HTMLButtonElement;
+const resultLabel = document.getElementById('result-label') as HTMLSpanElement;
+
+const decorations: ISearchOptions['decorations'] = {
+  matchBackground: '#ffff0040',
+  matchBorder: '#ffff00',
+  matchOverviewRuler: '#ffff00',
+  activeMatchBackground: '#ff000080',
+  activeMatchBorder: '#ff0000',
+  activeMatchColorOverviewRuler: '#ff0000',
+};
+
+function getOptions(): ISearchOptions {
+  return {
+    caseSensitive: false,
+    wholeWord: false,
+    regex: false,
+    incremental: true,
+    decorations,
+  };
+}
+
+searchInput.addEventListener('input', () => {
+  const term = searchInput.value;
+  if (term) {
+    searchAddon.findNext(term, getOptions());
+  } else {
+    searchAddon.clearDecorations();
+  }
+});
+
+nextBtn.addEventListener('click', () => {
+  searchAddon.findNext(searchInput.value, getOptions());
+});
+
+prevBtn.addEventListener('click', () => {
+  searchAddon.findPrevious(searchInput.value, getOptions());
+});
+
+searchInput.addEventListener('blur', () => {
+  // Reveal the terminal's native selection when focus leaves the search box.
+  searchAddon.clearActiveDecoration();
+});
+
+// Update the result counter whenever results change.
+searchAddon.onDidChangeResults(({ resultIndex, resultCount }) => {
+  if (resultIndex === -1) {
+    resultLabel.textContent = `${resultCount}+ matches`;
+  } else {
+    resultLabel.textContent = `${resultIndex + 1} / ${resultCount}`;
+  }
+});
+```
+
+```html
+<!-- Minimal search bar HTML -->
+<div id="search-bar">
+  <input id="search-input" type="text" placeholder="Search..." />
+  <button id="btn-prev">&#8593;</button>
+  <button id="btn-next">&#8595;</button>
+  <span id="result-label"></span>
+</div>
+<div id="terminal"></div>
+```

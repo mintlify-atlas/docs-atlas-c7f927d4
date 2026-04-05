@@ -1,0 +1,110 @@
+{
+  "projectType": "sdk-library",
+  "projectName": "Xterm.js",
+  "projectDescription": "A fully-featured, high-performance terminal emulator component for the browser and Node.js, powering terminals in VS Code, Hyper, and hundreds of other applications.",
+  "theme": "luma",
+  "primaryColor": "#5ca5d5",
+  "lightColor": "#2c2c2c",
+  "darkColor": null,
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/connecting-a-pty",
+              "guides/theming",
+              "guides/accessibility",
+              "guides/performance",
+              "guides/headless"
+            ]
+          },
+          {
+            "group": "Addons",
+            "pages": [
+              "addons/overview",
+              "addons/fit",
+              "addons/webgl",
+              "addons/search",
+              "addons/web-links",
+              "addons/attach",
+              "addons/serialize",
+              "addons/clipboard",
+              "addons/image"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Core",
+            "pages": [
+              "api/terminal",
+              "api/terminal-options",
+              "api/events"
+            ]
+          },
+          {
+            "group": "Interfaces",
+            "pages": [
+              "api/buffer",
+              "api/parser",
+              "api/unicode",
+              "api/decorations-markers"
+            ]
+          },
+          {
+            "group": "Addon API",
+            "pages": [
+              "api/addon-interface",
+              "api/addon-webgl-api",
+              "api/addon-search-api"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Full VT100/VT220/xterm escape sequence support including mouse events",
+    "Optional GPU-accelerated WebGL renderer for high-performance rendering",
+    "Rich Unicode support — CJK, emojis, IME, grapheme clustering",
+    "Extensible addon architecture for clipboard, search, image display, ligatures, and more",
+    "Headless mode (@xterm/headless) for server-side terminal state tracking in Node.js",
+    "Zero production dependencies — lightweight and self-contained",
+    "Accessibility support with screen reader mode and minimum contrast ratio enforcement",
+    "Kitty keyboard protocol, win32-input-mode, and other modern VT extension support"
+  ],
+  "publicApiSurface": [
+    "Terminal (class) — main entry point: open, write, writeln, resize, loadAddon, dispose",
+    "Terminal.options — runtime-configurable ITerminalOptions",
+    "Terminal.buffer — IBufferNamespace for reading terminal buffer state",
+    "Terminal.parser — IParser for registering custom escape sequence handlers",
+    "Terminal.unicode — IUnicodeHandling for Unicode version management",
+    "Terminal events — onData, onKey, onResize, onScroll, onTitleChange, onRender, onBell",
+    "Terminal.registerMarker / registerDecoration — line markers and custom decorations",
+    "Terminal.registerLinkProvider — custom link detection and interaction",
+    "ITerminalAddon — interface for building addons (activate / dispose)",
+    "FitAddon — fit terminal to container element (@xterm/addon-fit)",
+    "WebglAddon — WebGL2 hardware-accelerated renderer (@xterm/addon-webgl)",
+    "SearchAddon — findNext / findPrevious with decoration highlights (@xterm/addon-search)",
+    "AttachAddon — WebSocket attachment to a remote PTY (@xterm/addon-attach)",
+    "SerializeAddon — serialize buffer to VT sequences or HTML (@xterm/addon-serialize)",
+    "WebLinksAddon — automatic URL detection and interaction (@xterm/addon-web-links)",
+    "ClipboardAddon — browser clipboard read/write (@xterm/addon-clipboard)",
+    "ImageAddon — inline image rendering (@xterm/addon-image)",
+    "@xterm/headless — Node.js headless terminal for server-side state tracking"
+  ]
+}

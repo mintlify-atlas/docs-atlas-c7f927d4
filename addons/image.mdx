@@ -1,0 +1,189 @@
+---
+title: "Image addon"
+description: "Render inline images in the terminal via SIXEL, iTerm2 IIP, and Kitty graphics protocols."
+---
+
+The image addon displays inline images directly in the terminal buffer. It supports three widely-used protocols: SIXEL (DEC standard), iTerm2 Inline Image Protocol (IIP), and the Kitty graphics protocol. Applications that emit any of these sequences will have their images rendered in xterm.js automatically.
+
+<Note>
+  SIXEL and image handling are considered **beta quality**. IIP and Kitty support are in **alpha**. File issues for any unexpected behavior.
+</Note>
+
+## Installation
+
+```bash
+npm install @xterm/addon-image
+```
+
+## Basic usage
+
+```typescript
+import { Terminal } from '@xterm/xterm';
+import { ImageAddon } from '@xterm/addon-image';
+
+const terminal = new Terminal();
+const imageAddon = new ImageAddon();
+terminal.loadAddon(imageAddon);
+terminal.open(document.getElementById('terminal')!);
+```
+
+With defaults, all three protocols (SIXEL, IIP, Kitty) are enabled and the addon auto-configures size reporting so that image-emitting applications can query the terminal's pixel dimensions.
+
+## Configuration
+
+Pass `IImageAddonOptions` to the constructor to tune the addon:
+
+```typescript
+import { ImageAddon, IImageAddonOptions } from '@xterm/addon-image';
+
+const options: IImageAddonOptions = {
+  // Size reporting (CSI t queries) — enabled by default
+  enableSizeReports: true,
+
+  // Memory limits
+  pixelLimit: 16_777_216,   // max pixels per image (default: 2^24 = 4096×4096)
+  storageLimit: 128,         // FIFO cache size in MB (default: 128)
+  showPlaceholder: true,     // show placeholder for evicted images (default: true)
+
+  // SIXEL
+  sixelSupport: true,
+  sixelScrolling: true,
+  sixelPaletteLimit: 256,
+  sixelSizeLimit: 25_000_000,
+
+  // iTerm2 IIP
+  iipSupport: true,
+  iipSizeLimit: 20_000_000,
+
+  // Kitty graphics protocol
+  kittySupport: true,
+  kittySizeLimit: 20_000_000,
+};
+
+const imageAddon = new ImageAddon(options);
+terminal.loadAddon(imageAddon);
+```
+
+### IImageAddonOptions
+
+#### General
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `enableSizeReports` | `boolean` | `true` | Activates `CSI 14 t`, `CSI 16 t`, and `CSI 18 t` reports so applications can query terminal pixel and character dimensions. Set to `false` if you have strict security constraints or manage `windowOptions` separately. |
+| `pixelLimit` | `number` | `16777216` | Maximum pixels (width × height) a single image may contain. Images exceeding this are silently discarded. |
+| `storageLimit` | `number` | `128` | FIFO image cache size in MB. Older images are evicted when the limit is hit. Can be adjusted at runtime via `imageAddon.storageLimit`. |
+| `showPlaceholder` | `boolean` | `true` | Show a placeholder pattern for images that have been evicted from the cache but are still in the scrollback. |
+
+#### SIXEL
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `sixelSupport` | `boolean` | `true` | Enable SIXEL protocol. |
+| `sixelScrolling` | `boolean` | `true` | Scroll the terminal when an image extends past the bottom. Equivalent to `DECSET 80`. |
+| `sixelPaletteLimit` | `number` | `256` | Maximum number of palette registers (up to 4096). |
+| `sixelSizeLimit` | `number` | `25000000` | Maximum SIXEL sequence size in bytes. |
+
+#### iTerm2 IIP
+
+Supported image formats: PNG, JPEG, GIF (no animation). Data must be strict RFC 4648 Base64.
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `iipSupport` | `boolean` | `true` | Enable iTerm2 Inline Image Protocol. |
+| `iipSizeLimit` | `number` | `20000000` | Maximum IIP sequence size in bytes. |
+
+#### Kitty graphics protocol
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `kittySupport` | `boolean` | `true` | Enable Kitty graphics protocol. |
+| `kittySizeLimit` | `number` | `20000000` | Maximum Kitty sequence size in bytes. |
+
+## Runtime storage management
+
+Monitor and adjust image storage at runtime without reloading the addon:
+
+```typescript
+// Read current cache usage
+console.log(`Image storage: ${imageAddon.storageUsage.toFixed(1)} MB used`);
+
+// Lower the limit — evicts oldest images immediately if over the new limit
+imageAddon.storageLimit = 64;
+
+// Toggle the placeholder pattern
+imageAddon.showPlaceholder = false;
+```
+
+## Accessing image data
+
+The addon exposes two methods to retrieve image pixels as `HTMLCanvasElement` instances:
+
+```typescript
+// Original (un-resized) image canvas at the given buffer cell (0-based absolute row)
+const original: HTMLCanvasElement | undefined = imageAddon.getImageAtBufferCell(col, row);
+
+// Tile canvas for the single cell at the given position (may be resized)
+// Note: a new canvas is created per call — avoid in hot paths
+const tile: HTMLCanvasElement | undefined = imageAddon.extractTileAtBufferCell(col, row);
+```
+
+Both methods use absolute buffer coordinates (including scrollback), not viewport-relative coordinates.
+
+## Events
+
+| Event | Payload | Description |
+|-------|---------|-------------|
+| `onImageAdded` | `void` | Fires whenever a new image is added to the storage cache. |
+
+```typescript
+imageAddon.onImageAdded(() => {
+  console.log(`Storage usage: ${imageAddon.storageUsage.toFixed(1)} MB`);
+});
+```
+
+## Resetting the addon
+
+`reset()` restores all runtime options to the values provided at construction and clears the image storage:
+
+```typescript
+imageAddon.reset();
+```
+
+## Memory considerations
+
+Image decoding is memory-intensive. The peak usage during active decoding is approximately:
+
+```typescript
+// Active decoding peak (bytes)
+const peak = storageLimit * 1024 * 1024   // storage cache
+           + sixelSizeLimit               // incoming data buffer
+           + 2 * (pixelLimit * 4);        // two RGBA pixel buffers
+```
+
+For pages with multiple terminal instances, lower `storageLimit` per instance and monitor `storageUsage` to stay within budget:
+
+```typescript
+const MAX_TOTAL_MB = 256;
+const terminalCount = terminals.length;
+terminals.forEach(({ imageAddon }) => {
+  imageAddon.storageLimit = MAX_TOTAL_MB / terminalCount;
+});
+```
+
+## API reference
+
+### ImageAddon
+
+| Member | Description |
+|--------|-------------|
+| `constructor(options?)` | Creates the addon with optional `IImageAddonOptions`. |
+| `activate(terminal)` | Called automatically by `terminal.loadAddon()`. |
+| `dispose()` | Disposes the addon and frees image storage. |
+| `reset()` | Resets all options to constructor defaults and clears image storage. |
+| `storageLimit` | Get/set the FIFO cache limit in MB. Lowering evicts images immediately. |
+| `storageUsage` | Read-only current cache usage in MB. |
+| `showPlaceholder` | Get/set whether to show a placeholder for evicted images. |
+| `onImageAdded` | Event fired when a new image is added to storage. |
+| `getImageAtBufferCell(x, y)` | Returns the original image canvas at the given absolute buffer cell, or `undefined`. |
+| `extractTileAtBufferCell(x, y)` | Returns a new canvas for the single tile at the given absolute buffer cell, or `undefined`. |

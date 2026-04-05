@@ -1,0 +1,287 @@
+---
+title: "Decorations and markers"
+description: "Attach visual decorations and DOM overlays to specific lines in the terminal buffer using markers."
+---
+
+Decorations let you attach visual elements — custom background colors, foreground colors, DOM overlays, and overview ruler entries — to specific lines in the terminal buffer. They are anchored to `IMarker` objects, which track their associated line even as the scrollback buffer grows and shifts.
+
+## Markers
+
+A marker is a tracked reference to a specific line in the terminal's normal buffer. Unlike a plain line number, a marker stays associated with its line as new lines are added and the buffer scrolls.
+
+### registerMarker
+
+```typescript
+term.registerMarker(cursorYOffset?: number): IMarker
+```
+
+Creates and returns a new marker positioned relative to the current cursor row.
+
+<ParamField path="cursorYOffset" type="number" default="0">
+  The Y offset from the cursor's current row. `0` creates a marker on the cursor's current line. Positive values move down, negative values move up.
+</ParamField>
+
+```typescript
+// Create a marker at the current cursor line
+const marker = term.registerMarker(0);
+
+// Create a marker 2 lines above the cursor
+const markerAbove = term.registerMarker(-2);
+```
+
+<Note>
+  Markers are only supported on the normal buffer. `term.markers` always returns `[]` when the alternate buffer is active.
+</Note>
+
+### IMarker
+
+<ResponseField name="id" type="number">
+  A unique numeric identifier for this marker.
+</ResponseField>
+
+<ResponseField name="line" type="number">
+  The current absolute line index of this marker in the buffer. Returns `-1` if the marker has been disposed (i.e., the line was trimmed from scrollback).
+</ResponseField>
+
+<ResponseField name="isDisposed" type="boolean">
+  Whether this marker has been disposed. A marker is automatically disposed when its line is trimmed out of the scrollback buffer.
+</ResponseField>
+
+<ResponseField name="onDispose" type="IEvent<void>">
+  Fires when the marker is disposed — either manually via `dispose()` or automatically when the line scrolls out of the buffer.
+
+  ```typescript
+  marker.onDispose(() => {
+    console.log('Marker was disposed');
+    decoration?.dispose();
+  });
+  ```
+</ResponseField>
+
+<ResponseField name="dispose()" type="void">
+  Manually disposes the marker. Any decoration attached to this marker should also be disposed.
+</ResponseField>
+
+## Decorations
+
+A decoration attaches visual rendering to a marker. It can add custom colors to cells, render arbitrary DOM content over the terminal, and place a colored indicator in the overview ruler.
+
+### registerDecoration
+
+```typescript
+term.registerDecoration(decorationOptions: IDecorationOptions): IDecoration | undefined
+```
+
+Creates and returns a new decoration. Returns `undefined` if the alternate buffer is currently active or if the marker has already been disposed.
+
+<ParamField path="decorationOptions" type="IDecorationOptions" required>
+  The decoration configuration. See [IDecorationOptions](#idecorationoptions) below.
+</ParamField>
+
+### IDecorationOptions
+
+<ParamField path="marker" type="IMarker" required>
+  The marker that anchors the decoration's vertical position.
+</ParamField>
+
+<ParamField path="anchor" type="'left' | 'right'" default="'left'">
+  Which edge of the terminal viewport to anchor the decoration to horizontally.
+</ParamField>
+
+<ParamField path="x" type="number" default="0">
+  The horizontal offset in cells from the anchor edge.
+</ParamField>
+
+<ParamField path="width" type="number" default="1">
+  The width of the decoration in cells.
+</ParamField>
+
+<ParamField path="height" type="number" default="1">
+  The height of the decoration in cells (rows).
+</ParamField>
+
+<ParamField path="backgroundColor" type="string">
+  The background color of the decorated cells. Must be in `#RRGGBB` format. When two decorations overlap, the last registered one wins.
+</ParamField>
+
+<ParamField path="foregroundColor" type="string">
+  The foreground (text) color of the decorated cells. Must be in `#RRGGBB` format. When two decorations overlap, the last registered one wins.
+</ParamField>
+
+<ParamField path="layer" type="'bottom' | 'top'" default="'bottom'">
+  The render layer. `'bottom'` renders underneath text selection; `'top'` renders above it.
+</ParamField>
+
+<ParamField path="overviewRulerOptions" type="IDecorationOverviewRulerOptions">
+  When set, adds a colored indicator in the overview ruler (the minimap to the right of the scrollbar). Requires `scrollbar.width` to be set in terminal options.
+
+  <Expandable title="IDecorationOverviewRulerOptions properties">
+    <ResponseField name="color" type="string" required>
+      The color of the overview ruler indicator. Supports any CSS color string.
+    </ResponseField>
+    <ResponseField name="position" type="'left' | 'center' | 'right' | 'full'" default="'full'">
+      The horizontal position of the indicator within the overview ruler lane.
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+### IDecoration
+
+<ResponseField name="marker" type="IMarker">
+  The marker this decoration is anchored to.
+</ResponseField>
+
+<ResponseField name="element" type="HTMLElement | undefined">
+  The DOM element rendered for this decoration. `undefined` until the decoration has been rendered for the first time (listen to `onRender`).
+</ResponseField>
+
+<ResponseField name="options" type="Pick<IDecorationOptions, 'overviewRulerOptions'>">
+  A mutable subset of the decoration options. You can update `overviewRulerOptions` on an existing decoration. Only works when `overviewRulerOptions` was provided at registration time.
+</ResponseField>
+
+<ResponseField name="onRender" type="IEvent<HTMLElement>">
+  Fires each time the decoration's DOM element is rendered or re-rendered. The event value is the `HTMLElement` associated with the decoration. Use this to mount custom content.
+</ResponseField>
+
+<ResponseField name="isDisposed" type="boolean">
+  Whether the decoration has been disposed.
+</ResponseField>
+
+<ResponseField name="onDispose" type="IEvent<void>">
+  Fires when the decoration is disposed.
+</ResponseField>
+
+<ResponseField name="dispose()" type="void">
+  Disposes the decoration, removing it from the terminal.
+</ResponseField>
+
+## The overview ruler
+
+The overview ruler is a minimap displayed to the right of the scrollbar that shows the positions of decorations at a glance. To enable it, set `scrollbar.width` in terminal options:
+
+```typescript
+const term = new Terminal({
+  scrollbar: {
+    width: 14, // enables the overview ruler
+  },
+});
+```
+
+Once enabled, any decoration with `overviewRulerOptions` will appear as a colored strip in the ruler at the proportional position of the decorated line.
+
+## Practical examples
+
+### Highlight a specific output line
+
+```typescript
+import { Terminal } from '@xterm/xterm';
+
+const term = new Terminal({
+  scrollback: 5000,
+  scrollbar: { width: 14 },
+});
+term.open(document.getElementById('terminal'));
+
+// Write some content and mark the current line
+term.writeln('Starting build...');
+term.write('> Compiling...', () => {
+  // Create a marker at the cursor's current line after write completes
+  const marker = term.registerMarker(0);
+
+  // Attach a decoration with a yellow background and overview ruler dot
+  const decoration = term.registerDecoration({
+    marker,
+    width: term.cols,
+    backgroundColor: '#3a3000',
+    overviewRulerOptions: {
+      color: '#ffcc00',
+      position: 'right',
+    },
+  });
+
+  if (decoration) {
+    decoration.onRender(element => {
+      // Optionally add a custom DOM element overlay
+      element.style.outline = '1px solid #ffcc00';
+      element.style.outlineOffset = '-1px';
+    });
+  }
+
+  // Clean up when the marker leaves the buffer
+  marker.onDispose(() => decoration?.dispose());
+});
+```
+
+### Mark error lines
+
+```typescript
+function markErrorLine(term: Terminal, message: string): void {
+  term.writeln(`\x1b[31mERROR: ${message}\x1b[0m`, () => {
+    const marker = term.registerMarker(0);
+    const decoration = term.registerDecoration({
+      marker,
+      width: term.cols,
+      backgroundColor: '#3d0000',
+      layer: 'bottom',
+      overviewRulerOptions: {
+        color: '#ff4444',
+        position: 'full',
+      },
+    });
+    if (decoration) {
+      marker.onDispose(() => decoration.dispose());
+    }
+  });
+}
+```
+
+### Custom DOM content overlay
+
+```typescript
+term.writeln('Searching...', () => {
+  const marker = term.registerMarker(0);
+  const decoration = term.registerDecoration({
+    marker,
+    anchor: 'right',
+    x: 1,
+    width: 8,
+    height: 1,
+  });
+
+  decoration?.onRender(element => {
+    // Only set up the element once
+    if (element.childElementCount === 0) {
+      element.style.display = 'flex';
+      element.style.alignItems = 'center';
+      element.style.justifyContent = 'flex-end';
+      element.style.paddingRight = '4px';
+      element.style.fontSize = '11px';
+      element.style.color = '#888';
+      element.textContent = '3 matches';
+    }
+  });
+
+  marker.onDispose(() => decoration?.dispose());
+});
+```
+
+### Updating overview ruler options
+
+```typescript
+const marker = term.registerMarker(0);
+const decoration = term.registerDecoration({
+  marker,
+  overviewRulerOptions: { color: '#ff0000', position: 'right' },
+});
+
+// Later, change the color without re-creating the decoration
+if (decoration) {
+  decoration.options = {
+    overviewRulerOptions: { color: '#00ff00', position: 'right' },
+  };
+}
+```
+
+<Tip>
+  Always listen to `marker.onDispose` and call `decoration.dispose()` inside the handler. Markers are automatically disposed when their lines scroll out of the buffer, but decorations must be cleaned up manually.
+</Tip>

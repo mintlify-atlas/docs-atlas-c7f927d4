@@ -1,0 +1,656 @@
+---
+title: "Terminal class"
+description: "The main Terminal class — the entry point for all xterm.js functionality."
+---
+
+The `Terminal` class is the primary entry point for xterm.js. It implements `IDisposable` and manages the full lifecycle of a terminal emulator embedded in a web page.
+
+```typescript
+import { Terminal } from '@xterm/xterm';
+
+const term = new Terminal({ rows: 24, cols: 80 });
+term.open(document.getElementById('terminal'));
+term.write('Hello, world!\r\n');
+```
+
+## Constructor
+
+```typescript
+new Terminal(options?: ITerminalOptions & ITerminalInitOnlyOptions)
+```
+
+Creates a new `Terminal` instance. The terminal is not attached to the DOM until [`open`](#open) is called.
+
+<ParamField path="options" type="ITerminalOptions & ITerminalInitOnlyOptions">
+  Optional configuration object. See [Terminal options](/api/terminal-options) for the full list of available options.
+</ParamField>
+
+## Properties
+
+<ResponseField name="element" type="HTMLElement | undefined">
+  The outermost DOM element containing the terminal. This is `undefined` until [`open`](#open) is called.
+</ResponseField>
+
+<ResponseField name="screenElement" type="HTMLElement | undefined">
+  The screen element containing the terminal's canvas rendering layers and decorations, excluding the viewport and scrollbar. `undefined` until [`open`](#open) is called.
+</ResponseField>
+
+<ResponseField name="textarea" type="HTMLTextAreaElement | undefined">
+  The hidden `<textarea>` element that captures keyboard input for the terminal. `undefined` until [`open`](#open) is called.
+</ResponseField>
+
+<ResponseField name="rows" type="number">
+  The number of rows in the terminal's viewport. Set this in the constructor via `ITerminalInitOnlyOptions.rows` and change it at runtime with [`resize`](#resize).
+</ResponseField>
+
+<ResponseField name="cols" type="number">
+  The number of columns in the terminal's viewport. Set this in the constructor via `ITerminalInitOnlyOptions.cols` and change it at runtime with [`resize`](#resize).
+</ResponseField>
+
+<ResponseField name="buffer" type="IBufferNamespace">
+  Access to the terminal's normal and alternate buffers. See [Buffer API](/api/buffer) for details.
+</ResponseField>
+
+<ResponseField name="markers" type="ReadonlyArray<IMarker>">
+  All markers registered against the normal buffer. Returns an empty array when the alternate buffer is active. See [Decorations and markers](/api/decorations-markers).
+</ResponseField>
+
+<ResponseField name="parser" type="IParser">
+  The parser interface for registering custom escape sequence handlers. See [Parser API](/api/parser).
+</ResponseField>
+
+<ResponseField name="unicode" type="IUnicodeHandling">
+  The Unicode handling interface for registering and switching Unicode versions. See [Unicode handling](/api/unicode).
+
+  <Note>This API is experimental and may change in future releases.</Note>
+</ResponseField>
+
+<ResponseField name="modes" type="IModes">
+  The current terminal modes as set by SM/DECSET escape sequences, including cursor keys mode, mouse tracking mode, bracketed paste mode, and others.
+</ResponseField>
+
+<ResponseField name="dimensions" type="IRenderDimensions | undefined">
+  The pixel dimensions of the terminal canvas and cells. `undefined` until [`open`](#open) is called.
+
+  <Expandable title="IRenderDimensions properties">
+    <ResponseField name="css.canvas" type="{ width: number, height: number }">
+      The canvas dimensions in CSS pixels.
+    </ResponseField>
+    <ResponseField name="css.cell" type="{ width: number, height: number }">
+      A single cell's dimensions in CSS pixels.
+    </ResponseField>
+    <ResponseField name="device.canvas" type="{ width: number, height: number }">
+      The canvas dimensions in device pixels.
+    </ResponseField>
+    <ResponseField name="device.cell" type="{ width: number, height: number }">
+      A single cell's dimensions in device pixels.
+    </ResponseField>
+    <ResponseField name="device.char" type="{ width: number, height: number, top: number, left: number }">
+      A single character's dimensions and offset within its cell, in device pixels.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="options" type="ITerminalOptions">
+  Gets or sets terminal options. Reading returns the current option values. Writing updates one or more options immediately.
+
+  ```typescript
+  // Get a single option
+  console.log(term.options.fontSize);
+
+  // Set a single option
+  term.options.fontSize = 14;
+
+  // Set multiple options at once
+  term.options = {
+    fontSize: 14,
+    fontFamily: 'JetBrains Mono, monospace',
+  };
+  ```
+
+  <Note>
+    For options that are objects (e.g., `theme`), you must assign a new object — a reference comparison is used internally. Mutating the existing object will have no effect.
+
+    ```typescript
+    // This won't work
+    term.options.theme.background = '#1e1e1e';
+
+    // This will work
+    term.options.theme = { ...term.options.theme, background: '#1e1e1e' };
+    ```
+  </Note>
+</ResponseField>
+
+<ResponseField name="static strings" type="ILocalizableStrings">
+  Localizable strings used by the terminal for accessibility. Set before creating terminals to apply globally.
+
+  ```typescript
+  Terminal.strings.promptLabel = 'Terminal input';
+  Terminal.strings.tooMuchOutput = 'Too much output to read';
+  ```
+
+  <Expandable title="ILocalizableStrings properties">
+    <ResponseField name="promptLabel" type="string">
+      The `aria-label` for the underlying input `<textarea>`.
+    </ResponseField>
+    <ResponseField name="tooMuchOutput" type="string">
+      Announcement for when line reading is suppressed due to too many lines being printed when `screenReaderMode` is enabled.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Methods
+
+### open
+
+```typescript
+open(parent: HTMLElement): void
+```
+
+Attaches the terminal to a DOM element and performs initial rendering. Must be called before writing data. The parent element must be visible (have dimensions) at call time.
+
+<ParamField path="parent" type="HTMLElement" required>
+  The element to mount the terminal into. Must be visible with non-zero dimensions when `open` is called.
+</ParamField>
+
+```typescript
+const term = new Terminal();
+term.open(document.getElementById('terminal-container'));
+```
+
+<Note>
+  Call `open` again if the terminal element is moved to a different browser window, as several DOM measurements need to be re-performed.
+</Note>
+
+---
+
+### write
+
+```typescript
+write(data: string | Uint8Array, callback?: () => void): void
+```
+
+Writes data to the terminal. Data is processed asynchronously — the buffer will not reflect changes until the callback fires.
+
+<ParamField path="data" type="string | Uint8Array" required>
+  The data to write. `Uint8Array` is always treated as UTF-8 encoded bytes; `string` is treated as UTF-16. Pass raw bytes from a PTY as `Uint8Array`.
+</ParamField>
+
+<ParamField path="callback" type="() => void">
+  Called after the data has been fully parsed. Required if you need to read back from `buffer` after writing.
+</ParamField>
+
+```typescript
+// Write a string
+term.write('Hello, world!\r\n');
+
+// Write from a PTY (raw bytes)
+pty.onData(data => term.write(data));
+
+// Wait for the write to be processed
+term.write('some data', () => {
+  const line = term.buffer.active.getLine(0);
+  console.log(line?.translateToString());
+});
+```
+
+---
+
+### writeln
+
+```typescript
+writeln(data: string | Uint8Array, callback?: () => void): void
+```
+
+Writes data followed by a line feed character (`\n`). Identical to `write` otherwise.
+
+<ParamField path="data" type="string | Uint8Array" required>
+  The data to write, followed by a newline.
+</ParamField>
+
+<ParamField path="callback" type="() => void">
+  Called after the data has been fully parsed.
+</ParamField>
+
+```typescript
+term.writeln('Line 1');
+term.writeln('Line 2');
+```
+
+---
+
+### paste
+
+```typescript
+paste(data: string): void
+```
+
+Writes text to the terminal with appropriate transformations for pasted content (e.g., wrapping in bracketed paste sequences when the shell has that mode enabled).
+
+<ParamField path="data" type="string" required>
+  The text to paste into the terminal.
+</ParamField>
+
+---
+
+### resize
+
+```typescript
+resize(columns: number, rows: number): void
+```
+
+Resizes the terminal viewport. Debounce calls to this method to allow the PTY to catch up between resizes.
+
+<ParamField path="columns" type="number" required>
+  The new number of columns.
+</ParamField>
+
+<ParamField path="rows" type="number" required>
+  The new number of rows.
+</ParamField>
+
+```typescript
+// Debounced resize handler
+let resizeTimer: ReturnType<typeof setTimeout>;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    const { rows, cols } = fitAddon.proposeDimensions();
+    term.resize(cols, rows);
+    pty.resize(cols, rows);
+  }, 100);
+});
+```
+
+---
+
+### input
+
+```typescript
+input(data: string, wasUserInput?: boolean): void
+```
+
+Sends data to the application side of the terminal, as if typed by the user. The `onData` event will fire.
+
+<ParamField path="data" type="string" required>
+  The data string to send to the application.
+</ParamField>
+
+<ParamField path="wasUserInput" type="boolean" default="true">
+  Whether to treat the input as genuine user input. When `true`, additional behaviors like focus and selection clearing are triggered. Set to `false` when sending escape sequences programmatically.
+</ParamField>
+
+---
+
+### focus / blur
+
+```typescript
+focus(): void
+blur(): void
+```
+
+Programmatically focus or unfocus the terminal's input element.
+
+---
+
+### clear
+
+```typescript
+clear(): void
+```
+
+Clears the entire scrollback buffer, making the current prompt line the new first line of the buffer.
+
+---
+
+### reset
+
+```typescript
+reset(): void
+```
+
+Performs a full terminal reset (equivalent to the RIS sequence `\x1bc`). Clears the screen, resets all modes, and restores default settings.
+
+---
+
+### refresh
+
+```typescript
+refresh(start: number, end: number): void
+```
+
+Tells the renderer to refresh a range of rows at the next render opportunity.
+
+<ParamField path="start" type="number" required>
+  The first row to refresh (0-based, between `0` and `rows - 1`).
+</ParamField>
+
+<ParamField path="end" type="number" required>
+  The last row to refresh (0-based, between `start` and `rows - 1`).
+</ParamField>
+
+---
+
+### clearTextureAtlas
+
+```typescript
+clearTextureAtlas(): void
+```
+
+Clears the WebGL renderer's texture atlas and forces a redraw of all glyphs. Use this to work around GPU texture corruption issues, such as the Chromium/Nvidia bug where the texture is corrupted after the OS wakes from sleep.
+
+---
+
+### select
+
+```typescript
+select(column: number, row: number, length: number): void
+```
+
+Selects a range of text in the terminal buffer.
+
+<ParamField path="column" type="number" required>
+  The column where the selection starts (0-based).
+</ParamField>
+
+<ParamField path="row" type="number" required>
+  The row where the selection starts (0-based).
+</ParamField>
+
+<ParamField path="length" type="number" required>
+  The number of characters to select.
+</ParamField>
+
+---
+
+### selectAll
+
+```typescript
+selectAll(): void
+```
+
+Selects all text within the terminal buffer.
+
+---
+
+### selectLines
+
+```typescript
+selectLines(start: number, end: number): void
+```
+
+Selects all text between two buffer lines.
+
+<ParamField path="start" type="number" required>
+  The 0-based line index to start selection from (inclusive).
+</ParamField>
+
+<ParamField path="end" type="number" required>
+  The 0-based line index to end selection at (inclusive).
+</ParamField>
+
+---
+
+### hasSelection
+
+```typescript
+hasSelection(): boolean
+```
+
+Returns `true` if the terminal has an active text selection.
+
+---
+
+### getSelection
+
+```typescript
+getSelection(): string
+```
+
+Returns the currently selected text as a string. Useful for implementing copy functionality outside of xterm.js.
+
+---
+
+### getSelectionPosition
+
+```typescript
+getSelectionPosition(): IBufferRange | undefined
+```
+
+Returns the buffer coordinates of the current selection, or `undefined` if nothing is selected.
+
+---
+
+### clearSelection
+
+```typescript
+clearSelection(): void
+```
+
+Clears the current text selection.
+
+---
+
+### scrollLines
+
+```typescript
+scrollLines(amount: number): void
+```
+
+Scrolls the terminal viewport by a number of lines.
+
+<ParamField path="amount" type="number" required>
+  Number of lines to scroll. Positive scrolls down, negative scrolls up.
+</ParamField>
+
+---
+
+### scrollPages
+
+```typescript
+scrollPages(pageCount: number): void
+```
+
+Scrolls the terminal viewport by a number of pages.
+
+<ParamField path="pageCount" type="number" required>
+  Number of pages to scroll. Positive scrolls down, negative scrolls up.
+</ParamField>
+
+---
+
+### scrollToTop
+
+```typescript
+scrollToTop(): void
+```
+
+Scrolls the terminal viewport to the very top of the buffer.
+
+---
+
+### scrollToBottom
+
+```typescript
+scrollToBottom(): void
+```
+
+Scrolls the terminal viewport to the very bottom of the buffer.
+
+---
+
+### scrollToLine
+
+```typescript
+scrollToLine(line: number): void
+```
+
+Scrolls the terminal viewport to a specific line in the buffer.
+
+<ParamField path="line" type="number" required>
+  The 0-based line index to scroll to.
+</ParamField>
+
+---
+
+### registerMarker
+
+```typescript
+registerMarker(cursorYOffset?: number): IMarker
+```
+
+Creates a marker at an offset from the current cursor position in the normal buffer. See [Decorations and markers](/api/decorations-markers).
+
+<ParamField path="cursorYOffset" type="number" default="0">
+  The Y offset from the cursor row. `0` creates a marker at the current cursor line.
+</ParamField>
+
+---
+
+### registerDecoration
+
+```typescript
+registerDecoration(decorationOptions: IDecorationOptions): IDecoration | undefined
+```
+
+Registers a decoration on a marker, allowing custom rendering (colors, DOM elements, overview ruler entries). Returns `undefined` if the alternate buffer is active or the marker has already been disposed.
+
+<ParamField path="decorationOptions" type="IDecorationOptions" required>
+  The decoration configuration. See [Decorations and markers](/api/decorations-markers) for the full options reference.
+</ParamField>
+
+---
+
+### registerLinkProvider
+
+```typescript
+registerLinkProvider(linkProvider: ILinkProvider): IDisposable
+```
+
+Registers a custom link provider that detects and handles links in the terminal output. Multiple providers can be registered; they are queried in registration order.
+
+<ParamField path="linkProvider" type="ILinkProvider" required>
+  An object implementing `provideLinks(bufferLineNumber, callback)`.
+</ParamField>
+
+---
+
+### registerCharacterJoiner
+
+```typescript
+registerCharacterJoiner(handler: (text: string) => [number, number][]): number
+```
+
+Registers a character joiner, allowing sequences of characters to be rendered as a single unit. Useful for font ligatures.
+
+<ParamField path="handler" type="(text: string) => [number, number][]" required>
+  A function that receives a line's text and returns an array of `[start, end]` index pairs marking ranges to join. Runs on every render — keep it fast.
+</ParamField>
+
+Returns the joiner ID, which can be passed to `deregisterCharacterJoiner`.
+
+<Note>Character joiners are only used by the WebGL renderer.</Note>
+
+---
+
+### deregisterCharacterJoiner
+
+```typescript
+deregisterCharacterJoiner(joinerId: number): void
+```
+
+Removes a previously registered character joiner.
+
+<ParamField path="joinerId" type="number" required>
+  The ID returned by `registerCharacterJoiner`.
+</ParamField>
+
+---
+
+### attachCustomKeyEventHandler
+
+```typescript
+attachCustomKeyEventHandler(customKeyEventHandler: (event: KeyboardEvent) => boolean): void
+```
+
+Attaches a handler that runs before xterm.js processes key events. Return `false` to prevent xterm.js from handling the event.
+
+<ParamField path="customKeyEventHandler" type="(event: KeyboardEvent) => boolean" required>
+  A function that receives the `KeyboardEvent`. Return `true` to allow xterm.js to handle it, `false` to suppress it.
+</ParamField>
+
+```typescript
+// Custom keymap that overrides the backspace key
+const keymap = [
+  { key: 'Backspace', shiftKey: false, mapCode: 8 },
+  { key: 'Backspace', shiftKey: true, mapCode: 127 },
+];
+
+term.attachCustomKeyEventHandler(ev => {
+  if (ev.type === 'keydown') {
+    for (const mapping of keymap) {
+      if (mapping.key === ev.key && mapping.shiftKey === ev.shiftKey) {
+        socket.send(String.fromCharCode(mapping.mapCode));
+        return false;
+      }
+    }
+  }
+  return true;
+});
+```
+
+---
+
+### attachCustomWheelEventHandler
+
+```typescript
+attachCustomWheelEventHandler(customWheelEventHandler: (event: WheelEvent) => boolean): void
+```
+
+Attaches a handler that runs before xterm.js processes wheel events. Return `false` to prevent xterm.js from handling the event.
+
+<ParamField path="customWheelEventHandler" type="(event: WheelEvent) => boolean" required>
+  A function that receives the `WheelEvent`. Return `true` to allow processing, `false` to suppress it.
+</ParamField>
+
+```typescript
+// Prevent ctrl+scroll from scrolling the terminal (e.g., for zoom)
+term.attachCustomWheelEventHandler(ev => {
+  if (ev.ctrlKey) {
+    return false;
+  }
+  return true;
+});
+```
+
+---
+
+### loadAddon
+
+```typescript
+loadAddon(addon: ITerminalAddon): void
+```
+
+Loads an addon into this terminal instance. The addon's `activate(terminal)` method is called immediately.
+
+<ParamField path="addon" type="ITerminalAddon" required>
+  The addon to activate. Must implement `activate(terminal: Terminal): void` and `dispose(): void`.
+</ParamField>
+
+```typescript
+import { FitAddon } from '@xterm/addon-fit';
+
+const fitAddon = new FitAddon();
+term.loadAddon(fitAddon);
+fitAddon.fit();
+```
+
+---
+
+### dispose
+
+```typescript
+dispose(): void
+```
+
+Destroys the terminal, detaches it from the DOM, and removes all active listeners. Do not use the terminal instance after calling this.

@@ -1,0 +1,132 @@
+---
+title: "Web links addon"
+description: "Detect URLs in terminal output and make them clickable."
+---
+
+The web links addon scans terminal output for URLs and turns them into interactive links. By default, clicking a link opens it in a new browser tab. You can supply a custom handler for full control over click behavior.
+
+## Installation
+
+```bash
+npm install @xterm/addon-web-links
+```
+
+## Basic usage
+
+```typescript
+import { Terminal } from '@xterm/xterm';
+import { WebLinksAddon } from '@xterm/addon-web-links';
+
+const terminal = new Terminal();
+terminal.loadAddon(new WebLinksAddon());
+terminal.open(document.getElementById('terminal')!);
+```
+
+With no arguments, the addon detects `http://` and `https://` URLs and opens them with `window.open(uri, '_blank')` on click.
+
+## Custom click handler
+
+Provide a handler function as the first argument to control what happens when a link is clicked:
+
+```typescript
+const webLinksAddon = new WebLinksAddon((event: MouseEvent, uri: string) => {
+  // Prevent the default behavior and handle the link yourself
+  event.preventDefault();
+  console.log('Link clicked:', uri);
+  window.open(uri, '_blank', 'noopener,noreferrer');
+});
+terminal.loadAddon(webLinksAddon);
+```
+
+<Warning>
+  The default handler may not work when xterm.js is hosted inside an `<iframe>`. In that case always provide a custom handler and be mindful of [reverse tabnapping](https://owasp.org/www-community/attacks/Reverse_Tabnapping): open links with `rel="noopener noreferrer"` or the `noopener` window feature flag.
+</Warning>
+
+## Link provider options
+
+Pass an `ILinkProviderOptions` object as the second argument:
+
+```typescript
+const webLinksAddon = new WebLinksAddon(
+  undefined,  // use default click handler
+  {
+    hover(event, text, location) {
+      console.log('Hovering over', text, 'at', location);
+    },
+    leave(event, text) {
+      console.log('Left', text);
+    },
+    urlRegex: /https?:\/\/[^\s"'<>()]+/gi,
+  }
+);
+```
+
+### ILinkProviderOptions
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `hover` | `(event: MouseEvent, text: string, location: IViewportRange) => void` | Called when the mouse enters a link. `location` gives the viewport row/column range of the link. |
+| `leave` | `(event: MouseEvent, text: string) => void` | Called when the mouse leaves a link. May fire even if `hover` has not fired yet. |
+| `urlRegex` | `RegExp` | A custom regular expression to use instead of the built-in URL pattern. |
+
+### IViewportRange
+
+`IViewportRange` (from `@xterm/xterm`) describes the position of a link in the terminal viewport:
+
+```typescript
+interface IViewportRange {
+  start: { x: number; y: number };
+  end:   { x: number; y: number };
+}
+```
+
+Coordinates are 1-based column (`x`) and 0-based row (`y`) within the visible viewport.
+
+## Custom URL regex
+
+Match git references, file paths, or any other pattern by supplying a `urlRegex`:
+
+```typescript
+// Match file paths like /home/user/file.ts:42
+const webLinksAddon = new WebLinksAddon(
+  (event, uri) => openFileInEditor(uri),
+  { urlRegex: /(?:\/[\w.-]+)+(?::\d+)?/g }
+);
+```
+
+## Hover tooltip example
+
+```typescript
+import { Terminal } from '@xterm/xterm';
+import { WebLinksAddon, ILinkProviderOptions } from '@xterm/addon-web-links';
+
+const tooltip = document.createElement('div');
+tooltip.className = 'link-tooltip';
+document.body.appendChild(tooltip);
+
+const options: ILinkProviderOptions = {
+  hover(event, text) {
+    tooltip.textContent = text;
+    tooltip.style.display = 'block';
+    tooltip.style.left = `${event.pageX + 12}px`;
+    tooltip.style.top  = `${event.pageY + 12}px`;
+  },
+  leave() {
+    tooltip.style.display = 'none';
+  },
+};
+
+const terminal = new Terminal();
+terminal.loadAddon(new WebLinksAddon(undefined, options));
+terminal.open(document.getElementById('terminal')!);
+```
+
+## API reference
+
+### WebLinksAddon
+
+| Member | Description |
+|--------|-------------|
+| `constructor(handler?, options?)` | Creates the addon. `handler` overrides the default link-open behavior. `options` configures hover/leave callbacks and the URL regex. |
+| `activate(terminal)` | Called automatically by `terminal.loadAddon()`. |
+| `dispose()` | Removes all link providers registered by this addon. |

@@ -1,0 +1,149 @@
+---
+title: "Attach addon"
+description: "Attach the terminal to a WebSocket connection carrying a running process."
+---
+
+The attach addon connects xterm.js bidirectionally to a WebSocket. Data arriving on the socket is written to the terminal; keystrokes from the terminal are sent back over the socket. This is the simplest way to connect xterm.js to a server-side PTY.
+
+## Installation
+
+```bash
+npm install @xterm/addon-attach
+```
+
+## Basic usage
+
+<Steps>
+  <Step title="Open a WebSocket to your backend">
+    ```typescript
+    const socket = new WebSocket('wss://example.com/pty');
+    ```
+
+    Your backend should spawn a PTY process and pipe its I/O through the WebSocket. Popular Node.js options include [`node-pty`](https://github.com/microsoft/node-pty).
+  </Step>
+  <Step title="Create the terminal and attach">
+    ```typescript
+    import { Terminal } from '@xterm/xterm';
+    import { AttachAddon } from '@xterm/addon-attach';
+
+    const terminal = new Terminal();
+    terminal.open(document.getElementById('terminal')!);
+
+    const attachAddon = new AttachAddon(socket);
+    terminal.loadAddon(attachAddon);
+    ```
+
+    The addon begins listening for messages immediately. Existing buffered data on the socket is written to the terminal as soon as the connection opens.
+  </Step>
+</Steps>
+
+## Options
+
+```typescript
+const attachAddon = new AttachAddon(socket, {
+  bidirectional: true,  // default: true
+});
+```
+
+### IAttachOptions
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `bidirectional` | `boolean` | `true` | When `true`, terminal input is sent back to the WebSocket. Set to `false` for read-only / broadcast scenarios where the terminal should only display output. |
+
+## Read-only terminal
+
+Set `bidirectional: false` to display a process output stream without sending any input:
+
+```typescript
+const attachAddon = new AttachAddon(broadcastSocket, { bidirectional: false });
+terminal.loadAddon(attachAddon);
+```
+
+## Handling disconnects
+
+The addon does not reconnect automatically. Listen on the WebSocket `close` event and re-attach as needed:
+
+```typescript
+function connect(url: string, terminal: Terminal): void {
+  const socket = new WebSocket(url);
+
+  socket.addEventListener('close', () => {
+    terminal.writeln('\r\n[Connection closed. Reconnecting…]');
+    setTimeout(() => connect(url, terminal), 2000);
+  });
+
+  const attachAddon = new AttachAddon(socket);
+  terminal.loadAddon(attachAddon);
+}
+```
+
+## Resizing the remote PTY
+
+When the terminal is resized (for example after using the [Fit addon](/addons/fit)), you need to notify the backend so the PTY can be resized too. Send the new dimensions over a separate channel or a side-band message:
+
+```typescript
+import { FitAddon } from '@xterm/addon-fit';
+
+const fitAddon = new FitAddon();
+terminal.loadAddon(fitAddon);
+fitAddon.fit();
+
+terminal.onResize(({ cols, rows }) => {
+  // Send resize info to your backend via a separate control socket or
+  // a multiplexed message protocol
+  controlSocket.send(JSON.stringify({ type: 'resize', cols, rows }));
+});
+```
+
+## Full example
+
+```typescript
+import { Terminal } from '@xterm/xterm';
+import { FitAddon } from '@xterm/addon-fit';
+import { AttachAddon } from '@xterm/addon-attach';
+
+const terminal = new Terminal({
+  cursorBlink: true,
+  scrollback: 1000,
+});
+const fitAddon = new FitAddon();
+terminal.loadAddon(fitAddon);
+terminal.open(document.getElementById('terminal')!);
+fitAddon.fit();
+
+const socket = new WebSocket('wss://example.com/pty');
+
+socket.addEventListener('open', () => {
+  const attachAddon = new AttachAddon(socket);
+  terminal.loadAddon(attachAddon);
+});
+
+socket.addEventListener('close', () => {
+  terminal.writeln('\r\n\x1b[31m[Disconnected]\x1b[0m');
+});
+
+window.addEventListener('resize', () => fitAddon.fit());
+
+terminal.onResize(({ cols, rows }) => {
+  if (socket.readyState === WebSocket.OPEN) {
+    socket.send(JSON.stringify({ type: 'resize', cols, rows }));
+  }
+});
+```
+
+## API reference
+
+### AttachAddon
+
+| Member | Description |
+|--------|-------------|
+| `constructor(socket, options?)` | Creates the addon. `socket` must be a `WebSocket` instance. |
+| `activate(terminal)` | Called automatically by `terminal.loadAddon()`. Starts listening on the socket. |
+| `dispose()` | Closes the socket listeners and detaches the addon. |
+
+### IAttachOptions
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `bidirectional` | `boolean` | `true` | Whether terminal input is forwarded to the socket. |

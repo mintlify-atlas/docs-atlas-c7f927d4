@@ -1,0 +1,111 @@
+---
+title: "Fit addon"
+description: "Resize the terminal to fill its container element."
+---
+
+The fit addon resizes the terminal's rows and columns so that it fills its containing DOM element exactly. Call `fit()` after the container changes size to keep the terminal in sync.
+
+## Installation
+
+```bash
+npm install @xterm/addon-fit
+```
+
+## Basic usage
+
+<Steps>
+  <Step title="Import and create the addon">
+    ```typescript
+    import { Terminal } from '@xterm/xterm';
+    import { FitAddon } from '@xterm/addon-fit';
+
+    const terminal = new Terminal();
+    const fitAddon = new FitAddon();
+    ```
+  </Step>
+  <Step title="Load the addon and open the terminal">
+    ```typescript
+    terminal.loadAddon(fitAddon);
+    terminal.open(document.getElementById('terminal')!);
+    ```
+  </Step>
+  <Step title="Fit the terminal to its container">
+    ```typescript
+    fitAddon.fit();
+    ```
+
+    Call `fit()` any time the container dimensions change — on initial render, after CSS transitions, or when the user resizes the window.
+  </Step>
+</Steps>
+
+## Responding to window resize
+
+Listen on `window.resize` and re-fit. Debounce the handler to avoid firing on every pixel of a drag:
+
+```typescript
+function debounce<T extends (...args: unknown[]) => void>(fn: T, ms: number): T {
+  let timer: ReturnType<typeof setTimeout>;
+  return ((...args: unknown[]) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), ms);
+  }) as T;
+}
+
+const debouncedFit = debounce(() => fitAddon.fit(), 100);
+window.addEventListener('resize', debouncedFit);
+```
+
+## ResizeObserver pattern
+
+Using `ResizeObserver` is more reliable than `window.resize` because it fires whenever the container element changes size — including cases where the window size stays the same but a panel is resized:
+
+```typescript
+const container = document.getElementById('terminal')!;
+
+const observer = new ResizeObserver(() => {
+  // ResizeObserver fires synchronously during layout; defer to avoid
+  // "ResizeObserver loop completed with undelivered notifications" warnings.
+  requestAnimationFrame(() => fitAddon.fit());
+});
+
+observer.observe(container);
+
+// Clean up when the terminal is destroyed
+terminal.onDispose(() => observer.disconnect());
+```
+
+## proposeDimensions()
+
+`proposeDimensions()` calculates the dimensions that `fit()` would apply without actually resizing the terminal. It returns `{ rows, cols }` or `undefined` if the dimensions could not be determined (for example if the terminal has not been opened yet).
+
+```typescript
+const dims = fitAddon.proposeDimensions();
+if (dims) {
+  console.log(`Would fit to ${dims.cols} cols × ${dims.rows} rows`);
+}
+```
+
+Use this to preview dimensions before committing — for example, to send a resize signal to a remote process before the visual resize occurs.
+
+## API reference
+
+### FitAddon
+
+| Member | Description |
+|--------|-------------|
+| `fit()` | Resizes the terminal to fill its container element. |
+| `proposeDimensions()` | Returns `{ rows, cols }` preview without applying the resize, or `undefined`. |
+| `dispose()` | Disposes the addon. |
+
+### ITerminalDimensions
+
+```typescript
+interface ITerminalDimensions {
+  rows: number;
+  cols: number;
+}
+```
+
+<Tip>
+  Always call `fit()` after `terminal.open()`. The terminal cannot calculate dimensions before it is mounted in the DOM.
+</Tip>

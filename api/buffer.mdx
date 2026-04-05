@@ -1,0 +1,271 @@
+---
+title: "Buffer API"
+description: "Read and inspect the terminal's internal buffer — lines, cells, cursor position, and scrollback."
+---
+
+The buffer API provides read-only access to the terminal's internal state: the text content of every line, individual cell attributes (character, color, style), cursor position, and scrollback information. It is available via `terminal.buffer`.
+
+<Warning>
+  Buffer objects are snapshots tied to the terminal's internal state at the time of access. Do not store references to `IBufferLine` or `IBufferCell` objects across async boundaries — they may become stale after the terminal processes new data.
+</Warning>
+
+## IBufferNamespace
+
+Accessible via `terminal.buffer`. Provides access to both the normal and alternate screen buffers.
+
+<ResponseField name="active" type="IBuffer">
+  The currently active buffer. This is either the normal or alternate buffer depending on whether an application has switched to alternate screen mode (`CSI ? 47 h`).
+</ResponseField>
+
+<ResponseField name="normal" type="IBuffer">
+  The normal buffer (the primary screen with scrollback).
+</ResponseField>
+
+<ResponseField name="alternate" type="IBuffer">
+  The alternate buffer, which becomes active when an application enters alternate screen mode via DECSET (`CSI ? 47 h`). Full-screen applications like `vim` and `less` use this buffer.
+</ResponseField>
+
+<ResponseField name="onBufferChange" type="IEvent<IBuffer>">
+  Fires when the active buffer switches between normal and alternate. The event value is the new active `IBuffer`.
+
+  ```typescript
+  term.buffer.onBufferChange(buffer => {
+    console.log('Switched to:', buffer.type); // 'normal' or 'alternate'
+  });
+  ```
+</ResponseField>
+
+## IBuffer
+
+Represents a single terminal buffer (normal or alternate).
+
+<ResponseField name="type" type="'normal' | 'alternate'">
+  Indicates which buffer this is.
+</ResponseField>
+
+<ResponseField name="cursorY" type="number">
+  The Y position of the cursor within the viewport. Ranges from `0` (when the cursor is at `baseY`) to `Terminal.rows - 1` (last visible row). Add `baseY` to get the cursor's absolute line index in the buffer.
+</ResponseField>
+
+<ResponseField name="cursorX" type="number">
+  The X position of the cursor. Ranges from `0` (left side) to `Terminal.cols` (one past the last column).
+</ResponseField>
+
+<ResponseField name="viewportY" type="number">
+  The line index within the buffer corresponding to the top of the current viewport. When fully scrolled down, this equals `baseY`.
+</ResponseField>
+
+<ResponseField name="baseY" type="number">
+  The line index within the buffer where the bottom page starts (i.e., the first line of the viewport when fully scrolled to the bottom). The total scrollback length is `baseY`.
+</ResponseField>
+
+<ResponseField name="length" type="number">
+  The total number of lines in the buffer, including scrollback.
+</ResponseField>
+
+<ResponseField name="getLine(y)" type="IBufferLine | undefined">
+  Returns the line at the given absolute buffer index, or `undefined` if the index is out of range.
+
+  <ParamField path="y" type="number" required>
+    The 0-based absolute line index within the buffer (not the viewport).
+  </ParamField>
+</ResponseField>
+
+<ResponseField name="getNullCell()" type="IBufferCell">
+  Creates an empty `IBufferCell` object suitable for reuse as a cell reference in `line.getCell(x, cell)`. Using a pre-allocated cell avoids creating a new object on every iteration when scanning large buffers.
+</ResponseField>
+
+## IBufferLine
+
+Represents a single line in the buffer.
+
+<ResponseField name="isWrapped" type="boolean">
+  `true` if this line is a continuation of the previous line (wrapped because the terminal width was exceeded). Use this when reconstructing logical lines from physical ones.
+</ResponseField>
+
+<ResponseField name="length" type="number">
+  The number of cells in this line. This may exceed `Terminal.cols` after a resize (the array is not trimmed). Compare against `Terminal.cols` to determine the actual usable length.
+</ResponseField>
+
+<ResponseField name="getCell(x, cell?)" type="IBufferCell | undefined">
+  Returns the cell at column `x`, or `undefined` if `x` is out of range. Pass a pre-allocated cell object (from `getNullCell()`) as the second argument to avoid per-cell allocations.
+
+  <ParamField path="x" type="number" required>
+    The 0-based column index.
+  </ParamField>
+  <ParamField path="cell" type="IBufferCell">
+    Optional reusable cell object. Data is loaded into it in place. Use `buffer.getNullCell()` to create one.
+  </ParamField>
+</ResponseField>
+
+<ResponseField name="translateToString(trimRight?, startColumn?, endColumn?)" type="string">
+  Returns the line contents as a string.
+
+  <ParamField path="trimRight" type="boolean" default="false">
+    When `true`, trailing whitespace is removed from the result.
+  </ParamField>
+  <ParamField path="startColumn" type="number" default="0">
+    The column to start from (inclusive).
+  </ParamField>
+  <ParamField path="endColumn" type="number">
+    The column to end at (exclusive). Defaults to the end of the line.
+  </ParamField>
+</ResponseField>
+
+## IBufferCell
+
+Represents a single cell in a buffer line. A cell holds one character (or a wide character spanning two cells) along with all its visual attributes.
+
+### Content methods
+
+<ResponseField name="getWidth()" type="number">
+  The display width of the character in this cell:
+  - `1` — normal width character
+  - `2` — wide character (e.g., CJK ideograph)
+  - `0` — continuation cell immediately following a width-2 character (no visible content)
+</ResponseField>
+
+<ResponseField name="getChars()" type="string">
+  The character(s) in this cell. This can be a single character, a wide character (CJK), or an emoji.
+</ResponseField>
+
+<ResponseField name="getCode()" type="number">
+  The UTF-32 code point of the character. For combined strings, returns the code point of the last character.
+</ResponseField>
+
+### Color methods
+
+<ResponseField name="getFgColor()" type="number">
+  The foreground color value. Interpretation depends on `getFgColorMode()`:
+  - **Default** — `0` (terminal's default foreground, `CSI 39 m`)
+  - **Palette** — An index from `0` to `255` into the ANSI color palette
+  - **RGB** — A 24-bit hex value in `0xRRGGBB` format
+</ResponseField>
+
+<ResponseField name="getBgColor()" type="number">
+  The background color value. Same interpretation as `getFgColor()` but for the background (`CSI 49 m` for default).
+</ResponseField>
+
+<ResponseField name="getFgColorMode()" type="number">
+  A numeric code representing the foreground color mode. Use `isFgRGB()`, `isFgPalette()`, or `isFgDefault()` for readable checks.
+</ResponseField>
+
+<ResponseField name="getBgColorMode()" type="number">
+  A numeric code representing the background color mode. Use `isBgRGB()`, `isBgPalette()`, or `isBgDefault()` for readable checks.
+</ResponseField>
+
+<ResponseField name="isFgRGB()" type="boolean">Whether the foreground color is a 24-bit RGB value.</ResponseField>
+<ResponseField name="isBgRGB()" type="boolean">Whether the background color is a 24-bit RGB value.</ResponseField>
+<ResponseField name="isFgPalette()" type="boolean">Whether the foreground color is a palette index (0–255).</ResponseField>
+<ResponseField name="isBgPalette()" type="boolean">Whether the background color is a palette index (0–255).</ResponseField>
+<ResponseField name="isFgDefault()" type="boolean">Whether the foreground color is the terminal default.</ResponseField>
+<ResponseField name="isBgDefault()" type="boolean">Whether the background color is the terminal default.</ResponseField>
+
+### Text attribute methods
+
+These return a non-zero number when the attribute is active, or `0` when it is not. Compare with `!== 0` for a boolean check.
+
+<ResponseField name="isBold()" type="number">Whether the cell has the bold attribute (`CSI 1 m`).</ResponseField>
+<ResponseField name="isItalic()" type="number">Whether the cell has the italic attribute (`CSI 3 m`).</ResponseField>
+<ResponseField name="isDim()" type="number">Whether the cell has the dim/faint attribute (`CSI 2 m`).</ResponseField>
+<ResponseField name="isUnderline()" type="number">Whether the cell has the underline attribute (`CSI 4 m`).</ResponseField>
+<ResponseField name="isBlink()" type="number">Whether the cell has the blink attribute (`CSI 5 m`).</ResponseField>
+<ResponseField name="isInverse()" type="number">Whether the cell has the inverse/reverse video attribute (`CSI 7 m`).</ResponseField>
+<ResponseField name="isInvisible()" type="number">Whether the cell has the invisible attribute (`CSI 8 m`).</ResponseField>
+<ResponseField name="isStrikethrough()" type="number">Whether the cell has the strikethrough attribute (`CSI 9 m`).</ResponseField>
+<ResponseField name="isOverline()" type="number">Whether the cell has the overline attribute (`CSI 53 m`).</ResponseField>
+<ResponseField name="isAttributeDefault()" type="boolean">Whether the cell has no color or style attributes (completely default).</ResponseField>
+
+### Underline decoration methods
+
+<ResponseField name="getUnderlineStyle()" type="number">The underline style (0=none, 1=single, 2=double, 3=curly, 4=dotted, 5=dashed).</ResponseField>
+<ResponseField name="getUnderlineColor()" type="number">The underline color value (interpretation matches `getFgColor()`).</ResponseField>
+<ResponseField name="getUnderlineColorMode()" type="number">The underline color mode.</ResponseField>
+<ResponseField name="isUnderlineColorRGB()" type="boolean">Whether the underline color is 24-bit RGB.</ResponseField>
+<ResponseField name="isUnderlineColorPalette()" type="boolean">Whether the underline color is a palette index.</ResponseField>
+<ResponseField name="isUnderlineColorDefault()" type="boolean">Whether the underline color is the terminal default.</ResponseField>
+
+### Comparison
+
+<ResponseField name="attributesEquals(other)" type="boolean">
+  Compares this cell's visual attributes (colors and styles) with another cell. Does not compare cell content, URL IDs, or underline variant offsets.
+</ResponseField>
+
+## Practical examples
+
+### Extract visible text from the terminal
+
+```typescript
+function getVisibleText(term: Terminal): string {
+  const buffer = term.buffer.active;
+  const lines: string[] = [];
+
+  for (let y = buffer.viewportY; y < buffer.viewportY + term.rows; y++) {
+    const line = buffer.getLine(y);
+    if (line) {
+      lines.push(line.translateToString(true)); // trimRight = true
+    }
+  }
+
+  return lines.join('\n');
+}
+```
+
+### Extract all scrollback content
+
+```typescript
+function getAllBufferText(term: Terminal): string {
+  const buffer = term.buffer.active;
+  const lines: string[] = [];
+
+  for (let y = 0; y < buffer.length; y++) {
+    const line = buffer.getLine(y);
+    if (!line) continue;
+
+    // Reconstruct wrapped logical lines
+    if (!line.isWrapped) {
+      lines.push(line.translateToString(true));
+    } else {
+      lines[lines.length - 1] += line.translateToString(true);
+    }
+  }
+
+  return lines.join('\n');
+}
+```
+
+### Iterate cells efficiently
+
+```typescript
+function findCellsWithColor(term: Terminal, targetColor: number): Array<{ x: number; y: number }> {
+  const buffer = term.buffer.active;
+  const results: Array<{ x: number; y: number }> = [];
+
+  // Reuse a single cell object to avoid allocations
+  const cell = buffer.getNullCell();
+
+  for (let y = 0; y < buffer.length; y++) {
+    const line = buffer.getLine(y);
+    if (!line) continue;
+
+    for (let x = 0; x < term.cols; x++) {
+      line.getCell(x, cell);
+      if (cell.isFgPalette() && cell.getFgColor() === targetColor) {
+        results.push({ x, y });
+      }
+    }
+  }
+
+  return results;
+}
+```
+
+### Read cursor position
+
+```typescript
+function getCursorAbsoluteLine(term: Terminal): number {
+  const buffer = term.buffer.active;
+  // cursorY is relative to the viewport; add baseY for the absolute buffer line
+  return buffer.baseY + buffer.cursorY;
+}
+```

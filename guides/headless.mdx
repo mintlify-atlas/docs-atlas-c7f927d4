@@ -1,0 +1,236 @@
+---
+title: 'Headless mode'
+description: 'Run xterm.js in Node.js without a DOM to track terminal state server-side.'
+keywords: ['headless', 'node.js', 'server-side', 'serialize', 'reconnection', 'state', '@xterm/headless']
+---
+
+`@xterm/headless` is a stripped-down build of xterm.js that runs in Node.js without requiring a browser or any DOM APIs. It parses terminal sequences and maintains a full in-memory buffer, but performs no rendering.
+
+<Note>
+The headless package is experimental. Its API matches the browser `@xterm/xterm` package where it makes sense, but rendering-specific methods and addons that depend on the DOM are not available.
+</Note>
+
+## Use cases
+
+- **Tracking terminal state on the server**: Keep a headless terminal synchronized with the PTY's output. When a client reconnects, serialize the current state and replay it in the browser terminal.
+- **Testing terminal output**: Write data to a headless terminal and assert on buffer contents without a browser.
+- **Processing escape sequences**: Parse and strip ANSI sequences from PTY output in a Node.js pipeline.
+
+<Steps>
+
+<Step title="Install the package">
+
+```bash
+npm install @xterm/headless
+```
+
+The headless package is published separately from `@xterm/xterm`. You do not need the browser package on the server.
+
+</Step>
+
+<Step title="Create a headless terminal">
+
+Import `Terminal` from `@xterm/headless` and create an instance the same way you would in the browser.
+
+```typescript
+import { Terminal } from '@xterm/headless';
+
+const terminal = new Terminal({
+  cols: 80,
+  rows: 24,
+  scrollback: 1000,
+});
+```
+
+There is no `terminal.open()` call—the headless terminal never mounts to a DOM element.
+
+</Step>
+
+<Step title="Write PTY output to the terminal">
+
+Pipe your PTY's data stream into `terminal.write()`. The terminal parses the sequences and updates its internal buffer.
+
+```typescript
+import * as pty from 'node-pty';
+
+const ptyProcess = pty.spawn('bash', [], {
+  name: 'xterm-256color',
+  cols: 80,
+  rows: 24,
+  cwd: process.env.HOME,
+  env: process.env as Record<string, string>,
+});
+
+ptyProcess.onData((data) => {
+  terminal.write(data);
+});
+```
+
+Use the optional callback to know when the data has been fully parsed and the buffer is up to date:
+
+```typescript
+ptyProcess.onData((data) => {
+  terminal.write(data, () => {
+    // Buffer reflects this chunk of data
+  });
+});
+```
+
+</Step>
+
+<Step title="Read buffer state">
+
+After writing data, read back the buffer contents using the buffer API:
+
+```typescript
+// Access the active buffer
+const buffer = terminal.buffer.active;
+
+// Read a specific line (0-based from the top of the scrollback)
+const line = buffer.getLine(buffer.cursorY);
+if (line) {
+  const text = line.translateToString(true); // trim trailing spaces
+  console.log('Current line:', text);
+}
+
+// Iterate visible rows
+for (let i = 0; i < terminal.rows; i++) {
+  const row = buffer.getLine(buffer.baseY + i);
+  if (row) {
+    console.log(row.translateToString(true));
+  }
+}
+```
+
+`buffer.baseY` is the index of the first visible row within the scrollback; `buffer.cursorY` is the cursor's row within the viewport.
+
+</Step>
+
+<Step title="Serialize state for reconnection">
+
+Install `@xterm/addon-serialize` to capture the full terminal state as a VT sequence string that can be replayed into a browser terminal on reconnection.
+
+```bash
+npm install @xterm/addon-serialize
+```
+
+```typescript
+import { Terminal } from '@xterm/headless';
+import { SerializeAddon } from '@xterm/addon-serialize';
+
+const terminal = new Terminal({ cols: 80, rows: 24, scrollback: 1000 });
+const serializeAddon = new SerializeAddon();
+terminal.loadAddon(serializeAddon);
+
+// ... write PTY data into terminal ...
+
+// Capture state whenever needed
+function captureState(): string {
+  return serializeAddon.serialize();
+}
+```
+
+When a browser client connects (or reconnects), send the serialized state and replay it into the xterm.js browser terminal:
+
+```typescript
+// Server: serialize and send to the connecting client
+webSocket.send(JSON.stringify({
+  type: 'snapshot',
+  data: captureState(),
+  cols: terminal.cols,
+  rows: terminal.rows,
+}));
+```
+
+```typescript
+// Browser: receive and restore
+socket.addEventListener('message', (event) => {
+  const msg = JSON.parse(event.data);
+  if (msg.type === 'snapshot') {
+    // Resize to match the server terminal before writing
+    browserTerminal.resize(msg.cols, msg.rows);
+    browserTerminal.write(msg.data);
+  }
+});
+```
+
+It is best to write serialized data into a browser terminal *before* calling `terminal.open()`, or into a freshly constructed terminal, so the initial render shows the complete restored state without flicker.
+
+</Step>
+
+</Steps>
+
+## Controlling serialization scope
+
+`SerializeAddon.serialize()` accepts an options object to limit what is captured:
+
+```typescript
+// Serialize only the last 100 scrollback rows
+const recentState = serializeAddon.serialize({ scrollback: 100 });
+
+// Serialize a specific row range
+const rangeState = serializeAddon.serialize({
+  range: { start: 0, end: terminal.rows - 1 },
+});
+
+// Exclude terminal modes (cursor keys mode, bracketed paste, etc.)
+const statelessDump = serializeAddon.serialize({ excludeModes: true });
+```
+
+## Complete reconnection example
+
+```typescript
+// server.ts
+import * as pty from 'node-pty';
+import { WebSocketServer } from 'ws';
+import { Terminal } from '@xterm/headless';
+import { SerializeAddon } from '@xterm/addon-serialize';
+
+const COLS = 80;
+const ROWS = 24;
+
+const terminal = new Terminal({ cols: COLS, rows: ROWS, scrollback: 1000 });
+const serializeAddon = new SerializeAddon();
+terminal.loadAddon(serializeAddon);
+
+const ptyProcess = pty.spawn(process.env.SHELL ?? 'bash', [], {
+  name: 'xterm-256color',
+  cols: COLS,
+  rows: ROWS,
+  cwd: process.env.HOME,
+  env: process.env as Record<string, string>,
+});
+
+// Keep headless terminal in sync with PTY output
+ptyProcess.onData((data) => terminal.write(data));
+
+const wss = new WebSocketServer({ port: 3000 });
+
+wss.on('connection', (ws) => {
+  // Send current state to the newly connected client
+  ws.send(JSON.stringify({
+    type: 'snapshot',
+    data: serializeAddon.serialize(),
+    cols: COLS,
+    rows: ROWS,
+  }));
+
+  // Forward subsequent PTY output to this client
+  const dispose = ptyProcess.onData((data) => {
+    if (ws.readyState === ws.OPEN) {
+      ws.send(JSON.stringify({ type: 'data', data }));
+    }
+  });
+
+  ws.on('message', (raw) => {
+    const msg = JSON.parse(raw.toString());
+    if (msg.type === 'data') ptyProcess.write(msg.data);
+    if (msg.type === 'resize') {
+      ptyProcess.resize(msg.cols, msg.rows);
+      terminal.resize(msg.cols, msg.rows);
+    }
+  });
+
+  ws.on('close', () => dispose.dispose());
+});
+```

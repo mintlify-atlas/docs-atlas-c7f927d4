@@ -1,0 +1,384 @@
+---
+title: "Terminal options"
+description: "All configuration options for the xterm.js Terminal constructor and the options property."
+---
+
+Options are passed to the `Terminal` constructor and can be updated at runtime via `terminal.options`. Init-only options (`cols`, `rows`, `showCursorImmediately`) can only be set in the constructor.
+
+```typescript
+const term = new Terminal({
+  rows: 24,
+  cols: 80,
+  fontSize: 14,
+  fontFamily: 'JetBrains Mono, Menlo, monospace',
+  theme: {
+    background: '#1e1e1e',
+    foreground: '#d4d4d4',
+  },
+  cursorBlink: true,
+  scrollback: 5000,
+});
+```
+
+## Init-only options
+
+These options are part of `ITerminalInitOnlyOptions` and can only be provided in the constructor.
+
+<ParamField path="cols" type="number" default="80">
+  The number of columns in the terminal viewport.
+</ParamField>
+
+<ParamField path="rows" type="number" default="24">
+  The number of rows in the terminal viewport.
+</ParamField>
+
+<ParamField path="showCursorImmediately" type="boolean" default="false">
+  When `true`, the cursor is visible immediately when the terminal is created. When `false` (default), the cursor remains hidden until the terminal receives focus for the first time.
+</ParamField>
+
+## Behavior
+
+<ParamField path="allowProposedApi" type="boolean" default="false">
+  Whether to allow the use of proposed (experimental) APIs. When `false`, any usage of APIs marked as experimental will throw an error at runtime. Set to `true` only when using experimental features intentionally.
+</ParamField>
+
+<ParamField path="convertEol" type="boolean" default="false">
+  When enabled, every `\n` character is treated as `\r\n`, placing the cursor at the start of the next line. This is normally handled by the PTY's `termios` settings. Only use this when consuming data from a non-PTY source.
+</ParamField>
+
+<ParamField path="disableStdin" type="boolean" default="false">
+  When `true`, all keyboard and mouse input to the terminal is disabled.
+</ParamField>
+
+<ParamField path="scrollback" type="number" default="1000">
+  The number of rows retained in the scrollback buffer beyond the visible viewport.
+</ParamField>
+
+<ParamField path="wordSeparator" type="string" default="' ()[]{}&#39;,\`&#34;'">
+  A string of characters that are treated as word separators by the double-click-to-select logic.
+</ParamField>
+
+<ParamField path="tabStopWidth" type="number" default="8">
+  The size of tab stops in the terminal, in characters.
+</ParamField>
+
+## Appearance
+
+<ParamField path="fontSize" type="number" default="15">
+  The font size in CSS pixels used to render terminal text.
+</ParamField>
+
+<ParamField path="fontFamily" type="string" default="'courier-new, courier, monospace'">
+  The CSS font-family string used to render text. Use a monospace font for correct layout.
+</ParamField>
+
+<ParamField path="fontWeight" type="FontWeight" default="'normal'">
+  The font weight for non-bold text. Accepts CSS font-weight values: `'normal'`, `'bold'`, or numeric strings `'100'`–`'900'`, or a number.
+</ParamField>
+
+<ParamField path="fontWeightBold" type="FontWeight" default="'bold'">
+  The font weight for bold text (SGR 1). Accepts the same values as `fontWeight`.
+</ParamField>
+
+<ParamField path="letterSpacing" type="number" default="0">
+  Additional spacing in whole pixels between characters.
+</ParamField>
+
+<ParamField path="lineHeight" type="number" default="1">
+  The line height multiplier for rendering text rows.
+</ParamField>
+
+<ParamField path="drawBoldTextInBrightColors" type="boolean" default="true">
+  When `true`, bold text (SGR 1) is rendered in the bright variant of the color palette (ANSI colors 8–15).
+</ParamField>
+
+<ParamField path="theme" type="ITheme">
+  The color theme applied to the terminal. All fields are optional CSS color strings.
+
+  <Expandable title="ITheme properties">
+    <ResponseField name="foreground" type="string">Default foreground color.</ResponseField>
+    <ResponseField name="background" type="string">Default background color.</ResponseField>
+    <ResponseField name="cursor" type="string">Cursor color.</ResponseField>
+    <ResponseField name="cursorAccent" type="string">Cursor accent color (e.g., the text color inside a block cursor).</ResponseField>
+    <ResponseField name="selectionBackground" type="string">Selection background color. Supports transparency.</ResponseField>
+    <ResponseField name="selectionForeground" type="string">Selection foreground color.</ResponseField>
+    <ResponseField name="selectionInactiveBackground" type="string">Selection background when the terminal is not focused. Supports transparency.</ResponseField>
+    <ResponseField name="scrollbarSliderBackground" type="string">Scrollbar slider background. Defaults to foreground color at 20% opacity.</ResponseField>
+    <ResponseField name="scrollbarSliderHoverBackground" type="string">Scrollbar slider background on hover. Defaults to foreground at 40% opacity.</ResponseField>
+    <ResponseField name="scrollbarSliderActiveBackground" type="string">Scrollbar slider background when clicked. Defaults to foreground at 50% opacity.</ResponseField>
+    <ResponseField name="overviewRulerBorder" type="string">Border color separating the terminal from the overview ruler. Defaults to `#000000`.</ResponseField>
+    <ResponseField name="black" type="string">ANSI black (`\x1b[30m`).</ResponseField>
+    <ResponseField name="red" type="string">ANSI red (`\x1b[31m`).</ResponseField>
+    <ResponseField name="green" type="string">ANSI green (`\x1b[32m`).</ResponseField>
+    <ResponseField name="yellow" type="string">ANSI yellow (`\x1b[33m`).</ResponseField>
+    <ResponseField name="blue" type="string">ANSI blue (`\x1b[34m`).</ResponseField>
+    <ResponseField name="magenta" type="string">ANSI magenta (`\x1b[35m`).</ResponseField>
+    <ResponseField name="cyan" type="string">ANSI cyan (`\x1b[36m`).</ResponseField>
+    <ResponseField name="white" type="string">ANSI white (`\x1b[37m`).</ResponseField>
+    <ResponseField name="brightBlack" type="string">ANSI bright black (`\x1b[1;30m`).</ResponseField>
+    <ResponseField name="brightRed" type="string">ANSI bright red (`\x1b[1;31m`).</ResponseField>
+    <ResponseField name="brightGreen" type="string">ANSI bright green (`\x1b[1;32m`).</ResponseField>
+    <ResponseField name="brightYellow" type="string">ANSI bright yellow (`\x1b[1;33m`).</ResponseField>
+    <ResponseField name="brightBlue" type="string">ANSI bright blue (`\x1b[1;34m`).</ResponseField>
+    <ResponseField name="brightMagenta" type="string">ANSI bright magenta (`\x1b[1;35m`).</ResponseField>
+    <ResponseField name="brightCyan" type="string">ANSI bright cyan (`\x1b[1;36m`).</ResponseField>
+    <ResponseField name="brightWhite" type="string">ANSI bright white (`\x1b[1;37m`).</ResponseField>
+    <ResponseField name="extendedAnsi" type="string[]">Colors for ANSI extended palette indices 16–255.</ResponseField>
+  </Expandable>
+</ParamField>
+
+## Cursor
+
+<ParamField path="cursorBlink" type="boolean" default="false">
+  Whether the cursor blinks. Blinking automatically pauses after 5 minutes of idle time and resumes on click, focus, or cursor movement.
+</ParamField>
+
+<ParamField path="blinkIntervalDuration" type="number" default="0">
+  The interval in milliseconds for the cursor blink attribute — how long the cursor remains visible or hidden before toggling. Set to `0` to disable blinking.
+</ParamField>
+
+<ParamField path="cursorStyle" type="'block' | 'underline' | 'bar'" default="'block'">
+  The cursor style when the terminal is focused.
+</ParamField>
+
+<ParamField path="cursorWidth" type="number" default="1">
+  The width of the cursor in CSS pixels. Only applies when `cursorStyle` is `'bar'`.
+</ParamField>
+
+<ParamField path="cursorInactiveStyle" type="'outline' | 'block' | 'bar' | 'underline' | 'none'" default="'outline'">
+  The cursor style when the terminal is not focused.
+</ParamField>
+
+## Scrolling
+
+<ParamField path="scrollOnUserInput" type="boolean" default="true">
+  Whether to scroll to the bottom whenever the user types or pastes into the terminal.
+</ParamField>
+
+<ParamField path="scrollSensitivity" type="number" default="1">
+  A multiplier for the normal scroll speed.
+</ParamField>
+
+<ParamField path="fastScrollSensitivity" type="number" default="5">
+  A multiplier for scroll speed when `Alt` is held.
+</ParamField>
+
+<ParamField path="smoothScrollDuration" type="number" default="0">
+  Duration in milliseconds for smooth scroll animation between origin and target. Set to `0` to disable smooth scrolling.
+</ParamField>
+
+<ParamField path="scrollOnEraseInDisplay" type="boolean" default="false">
+  When `true`, the Erase in Display All (`ED2`) escape sequence pushes erased content to the scrollback buffer rather than simply clearing the visible viewport. This emulates PuTTY's default clear screen behavior.
+</ParamField>
+
+<ParamField path="reflowCursorLine" type="boolean" default="false">
+  When `true`, the line containing the cursor is reflowed when the terminal is resized. This does not move the cursor position, only adjusts the line's content. Disabled by default because shells typically handle reflow themselves.
+</ParamField>
+
+<ParamField path="scrollbar" type="IScrollbarOptions">
+  Options for the scrollbar and overview ruler.
+
+  <Expandable title="IScrollbarOptions properties">
+    <ResponseField name="showScrollbar" type="boolean" default="true">
+      Whether to show the scrollbar. When `false`, overrides `width`.
+    </ResponseField>
+    <ResponseField name="showArrows" type="boolean" default="false">
+      Whether to show arrows at the top and bottom of the scrollbar.
+    </ResponseField>
+    <ResponseField name="width" type="number">
+      The width of the scrollbar and overview ruler in CSS pixels. Setting this enables the overview ruler.
+    </ResponseField>
+    <ResponseField name="overviewRuler" type="IOverviewRulerOptions">
+      Controls the visibility and style of the overview ruler.
+
+      <Expandable title="IOverviewRulerOptions properties">
+        <ResponseField name="showTopBorder" type="boolean">Whether to show the top border of the overview ruler.</ResponseField>
+        <ResponseField name="showBottomBorder" type="boolean">Whether to show the bottom border of the overview ruler.</ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+## Accessibility
+
+<ParamField path="screenReaderMode" type="boolean" default="false">
+  When `true`, supporting DOM elements are exposed to enable NVDA (Windows) and VoiceOver (macOS) screen reader support.
+</ParamField>
+
+<ParamField path="minimumContrastRatio" type="number" default="1">
+  The minimum WCAG contrast ratio for text. When set, the terminal dynamically adjusts foreground colors to meet the ratio. Common values:
+  - `1` — Default, no adjustment.
+  - `4.5` — WCAG AA compliance.
+  - `7` — WCAG AAA compliance.
+  - `21` — Maximum contrast (black on white or white on black).
+</ParamField>
+
+## Mouse
+
+<ParamField path="altClickMovesCursor" type="boolean" default="true">
+  When `true`, Alt+click moves the prompt cursor to the position under the mouse pointer.
+</ParamField>
+
+<ParamField path="macOptionIsMeta" type="boolean" default="false">
+  When `true`, the Option key on macOS is treated as the Meta key.
+</ParamField>
+
+<ParamField path="macOptionClickForcesSelection" type="boolean" default="false">
+  When `true`, holding Option forces normal text selection behavior regardless of whether the terminal application has enabled mouse events mode. This allows xterm.js selection to work inside tmux with mouse mode enabled.
+</ParamField>
+
+<ParamField path="rightClickSelectsWord" type="boolean" default="false">
+  When `true`, right-clicking selects the word under the cursor — standard behavior in many macOS applications.
+</ParamField>
+
+## Advanced
+
+<ParamField path="allowTransparency" type="boolean" default="false">
+  When `true`, the background supports non-opaque colors. Must be set before `open()` is called and cannot be changed without re-opening the terminal. Enabling this may negatively impact rendering performance.
+</ParamField>
+
+<ParamField path="ignoreBracketedPasteMode" type="boolean" default="false">
+  When `true`, paste operations never include the bracketed paste sequences (`\x1b[200~` / `\x1b[201~`), even if the shell has enabled bracketed paste mode.
+</ParamField>
+
+<ParamField path="rescaleOverlappingGlyphs" type="boolean" default="false">
+  When `true`, glyphs that are nominally single-cell wide but visually overflow into adjacent cells (common with ambiguous-width characters such as Roman numerals U+2160+) are scaled horizontally to fit within their cell. Required for GB18030 compliance. Does not affect emoji, Powerline, or Nerd Font glyphs. Not supported by the DOM renderer.
+</ParamField>
+
+<ParamField path="logLevel" type="LogLevel" default="'info'">
+  The minimum log level to output. Levels in order: `'trace'`, `'debug'`, `'info'`, `'warn'`, `'error'`, `'off'`.
+</ParamField>
+
+<ParamField path="logger" type="ILogger | null">
+  A custom logger object to use instead of `console`. Must implement `trace`, `debug`, `info`, `warn`, and `error` methods.
+</ParamField>
+
+<ParamField path="linkHandler" type="ILinkHandler | null">
+  A handler for OSC 8 hyperlinks. When not set, links fall back to the browser's `confirm` dialog with a security warning.
+
+  <Warning>
+    Validate link URLs before activating them. Applications can write links with `javascript:` schemes or other dangerous protocols. At minimum, check that links start with `https://`.
+  </Warning>
+</ParamField>
+
+<ParamField path="documentOverride" type="any | null">
+  A `Document` object to use instead of the one xterm.js was attached to. Improves support in multi-window applications where `instanceof` checks across windows fail.
+</ParamField>
+
+<ParamField path="windowsPty" type="IWindowsPty">
+  Compatibility information for Windows PTY backends. Enables heuristics specific to ConPTY and WinPTY.
+
+  <Expandable title="IWindowsPty properties">
+    <ResponseField name="backend" type="'conpty' | 'winpty'">The PTY backend in use.</ResponseField>
+    <ResponseField name="buildNumber" type="number">The Windows build number (e.g., `19045`). Used to gate behavior on specific ConPTY fixes.</ResponseField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="windowOptions" type="IWindowOptions">
+  Enables window manipulation and report escape sequences (`CSI Ps ; Ps ; Ps t`). All features are disabled by default for security. See the typings for the full list of supported `Ps` values.
+</ParamField>
+
+<ParamField path="vtExtensions" type="IVtExtensions">
+  Enables optional VT protocol extensions.
+
+  <Expandable title="IVtExtensions properties">
+    <ResponseField name="kittyKeyboard" type="boolean" default="false">
+      Enables the [Kitty keyboard protocol](https://sw.kovidgoyal.net/kitty/keyboard-protocol/) (`CSI =|?|>|< u`). When enabled, the terminal responds to keyboard protocol queries and allows programs to enable enhanced keyboard reporting.
+    </ResponseField>
+    <ResponseField name="kittySgrBoldFaintControl" type="boolean" default="true">
+      Enables SGR 221 (not bold) and SGR 222 (not faint), kitty extensions that allow resetting bold and faint states independently.
+    </ResponseField>
+    <ResponseField name="win32InputMode" type="boolean" default="false">
+      Enables win32-input-mode (`DECSET 9001`), allowing programs to enable Win32 `INPUT_RECORD` keyboard reporting via `CSI ? 9001 h`.
+    </ResponseField>
+    <ResponseField name="colorSchemeQuery" type="boolean" default="true">
+      Enables color scheme query and notification (`CSI ? 996 n` and `DECSET 2031`). The terminal responds with dark/light based on the relative luminance of the theme colors.
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="quirks" type="ITerminalQuirks">
+  Enables non-standard or legacy behavior that is generally disabled in modern terminals.
+
+  <Expandable title="ITerminalQuirks properties">
+    <ResponseField name="allowSetCursorBlink" type="boolean" default="false">
+      Enables DECSET 12 / DECRST 12 for cursor blink control. Programs like `vim` may use this but might not reset it on exit. Note that DECRQM works regardless of this option.
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+## Complete example
+
+```typescript
+import { Terminal } from '@xterm/xterm';
+
+const term = new Terminal({
+  // Init-only
+  cols: 120,
+  rows: 30,
+  showCursorImmediately: true,
+
+  // Behavior
+  allowProposedApi: false,
+  convertEol: false,
+  disableStdin: false,
+  scrollback: 10000,
+  wordSeparator: ' ()[]{}\'`,"\`',
+
+  // Appearance
+  fontSize: 14,
+  fontFamily: 'JetBrains Mono, Menlo, Consolas, monospace',
+  fontWeight: 'normal',
+  fontWeightBold: 'bold',
+  letterSpacing: 0,
+  lineHeight: 1.2,
+  drawBoldTextInBrightColors: true,
+  theme: {
+    background: '#1e1e1e',
+    foreground: '#d4d4d4',
+    cursor: '#aeafad',
+    black: '#1e1e1e',
+    red: '#f44747',
+    green: '#608b4e',
+    yellow: '#dcdcaa',
+    blue: '#569cd6',
+    magenta: '#c678dd',
+    cyan: '#56b6c2',
+    white: '#d4d4d4',
+    brightBlack: '#808080',
+    brightRed: '#f44747',
+    brightGreen: '#b5cea8',
+    brightYellow: '#dcdcaa',
+    brightBlue: '#9cdcfe',
+    brightMagenta: '#c678dd',
+    brightCyan: '#56b6c2',
+    brightWhite: '#ffffff',
+  },
+
+  // Cursor
+  cursorBlink: true,
+  cursorStyle: 'block',
+  cursorInactiveStyle: 'outline',
+
+  // Scrolling
+  scrollOnUserInput: true,
+  scrollSensitivity: 1,
+  fastScrollSensitivity: 5,
+  smoothScrollDuration: 0,
+  scrollbar: {
+    showScrollbar: true,
+    width: 14,
+  },
+
+  // Accessibility
+  screenReaderMode: false,
+  minimumContrastRatio: 1,
+
+  // Mouse
+  altClickMovesCursor: true,
+  rightClickSelectsWord: false,
+
+  // Logging
+  logLevel: 'warn',
+});
+```

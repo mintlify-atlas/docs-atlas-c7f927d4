@@ -1,0 +1,269 @@
+---
+title: 'Connecting a PTY'
+description: 'Wire a server-side pseudoterminal to an xterm.js frontend over WebSocket.'
+keywords: ['pty', 'node-pty', 'websocket', 'shell', 'bash', 'resize']
+---
+
+A **pseudoterminal** (PTY) is a kernel-level construct that emulates a hardware serial terminal. Processes like `bash` or `zsh` write output to the PTY master end; the data flows out to whoever is reading it—in this case, your WebSocket server, which forwards it to the browser. Input typed in the browser travels the same path in reverse.
+
+xterm.js is a terminal *emulator*. It renders characters and interprets escape sequences, but it is not a shell and does not execute commands. To run real processes you need a PTY bridge between the browser and the server. The most common library for this in Node.js is [node-pty](https://github.com/microsoft/node-pty).
+
+<Steps>
+
+<Step title="Install dependencies">
+
+On the server you need `node-pty` to spawn the shell and `ws` to run the WebSocket server.
+
+```bash
+npm install node-pty ws
+```
+
+On the client you need `@xterm/xterm`.
+
+```bash
+npm install @xterm/xterm
+```
+
+`node-pty` includes native bindings and must be compiled for your platform. On Linux and macOS the standard build tools are sufficient. On Windows, install the **Desktop development with C++** workload in Visual Studio Build Tools.
+
+</Step>
+
+<Step title="Spawn a shell with node-pty">
+
+Create a server file that spawns a shell process and attaches it to a PTY.
+
+<Tabs>
+  <Tab title="bash / zsh (Linux & macOS)">
+    ```typescript
+    import * as pty from 'node-pty';
+    import { WebSocketServer } from 'ws';
+
+    const wss = new WebSocketServer({ port: 3000 });
+
+    wss.on('connection', (ws) => {
+      // Spawn the shell inside a PTY
+      const shell = process.env.SHELL ?? 'bash';
+      const ptyProcess = pty.spawn(shell, [], {
+        name: 'xterm-256color',
+        cols: 80,
+        rows: 24,
+        cwd: process.env.HOME,
+        env: process.env as Record<string, string>,
+      });
+
+      // PTY → browser: forward raw output
+      ptyProcess.onData((data) => {
+        if (ws.readyState === ws.OPEN) {
+          ws.send(data);
+        }
+      });
+
+      // Browser → PTY: forward keystrokes
+      ws.on('message', (message) => {
+        const msg = JSON.parse(message.toString());
+        if (msg.type === 'data') {
+          ptyProcess.write(msg.data);
+        } else if (msg.type === 'resize') {
+          ptyProcess.resize(msg.cols, msg.rows);
+        }
+      });
+
+      ws.on('close', () => ptyProcess.kill());
+    });
+
+    console.log('WebSocket PTY server listening on ws://localhost:3000');
+    ```
+  </Tab>
+  <Tab title="cmd.exe (Windows)">
+    ```typescript
+    import * as pty from 'node-pty';
+    import { WebSocketServer } from 'ws';
+
+    const wss = new WebSocketServer({ port: 3000 });
+
+    wss.on('connection', (ws) => {
+      const ptyProcess = pty.spawn('cmd.exe', [], {
+        name: 'xterm-256color',
+        cols: 80,
+        rows: 24,
+        cwd: process.env.USERPROFILE,
+        env: process.env as Record<string, string>,
+      });
+
+      ptyProcess.onData((data) => {
+        if (ws.readyState === ws.OPEN) {
+          ws.send(data);
+        }
+      });
+
+      ws.on('message', (message) => {
+        const msg = JSON.parse(message.toString());
+        if (msg.type === 'data') {
+          ptyProcess.write(msg.data);
+        } else if (msg.type === 'resize') {
+          ptyProcess.resize(msg.cols, msg.rows);
+        }
+      });
+
+      ws.on('close', () => ptyProcess.kill());
+    });
+    ```
+  </Tab>
+</Tabs>
+
+The `name` field sets the `TERM` environment variable inside the shell. Use `xterm-256color` for full color support.
+
+</Step>
+
+<Step title="Create the terminal in the browser">
+
+Install and import xterm.js, create a `Terminal` instance, and mount it on a DOM element.
+
+```typescript
+import { Terminal } from '@xterm/xterm';
+import '@xterm/xterm/css/xterm.css';
+
+const terminal = new Terminal({
+  cols: 80,
+  rows: 24,
+});
+
+terminal.open(document.getElementById('terminal')!);
+terminal.focus();
+```
+
+The element passed to `terminal.open()` must already be visible in the DOM and have non-zero dimensions when `open` is called.
+
+</Step>
+
+<Step title="Connect the WebSocket and wire data flow">
+
+Open a WebSocket connection to your server, then wire the two-way data flow between the terminal and the socket.
+
+```typescript
+const socket = new WebSocket('ws://localhost:3000');
+
+// Server → terminal: write PTY output
+socket.addEventListener('message', (event) => {
+  terminal.write(event.data);
+});
+
+// Terminal → server: send keystrokes
+terminal.onData((data) => {
+  if (socket.readyState === WebSocket.OPEN) {
+    socket.send(JSON.stringify({ type: 'data', data }));
+  }
+});
+
+socket.addEventListener('open', () => {
+  terminal.writeln('Connected to remote shell.');
+});
+
+socket.addEventListener('close', () => {
+  terminal.writeln('\r\nConnection closed.');
+});
+```
+
+</Step>
+
+<Step title="Handle terminal resize">
+
+When the user resizes the browser window the terminal dimensions change. You must propagate the new size to the PTY; otherwise the shell's line-wrapping and cursor positioning break.
+
+```typescript
+terminal.onResize(({ cols, rows }) => {
+  socket.send(JSON.stringify({ type: 'resize', cols, rows }));
+});
+```
+
+On the server, the resize message handler calls `ptyProcess.resize(cols, rows)` as shown in step 2.
+
+It is best practice to debounce resize calls so the PTY is not overwhelmed if the user drags the window edge continuously.
+
+```typescript
+function debounce<T extends (...args: any[]) => void>(fn: T, ms: number): T {
+  let timer: ReturnType<typeof setTimeout>;
+  return ((...args: any[]) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), ms);
+  }) as T;
+}
+
+const sendResize = debounce(({ cols, rows }: { cols: number; rows: number }) => {
+  if (socket.readyState === WebSocket.OPEN) {
+    socket.send(JSON.stringify({ type: 'resize', cols, rows }));
+  }
+}, 50);
+
+terminal.onResize(sendResize);
+```
+
+</Step>
+
+<Step title="Fit the terminal to its container (optional)">
+
+Use `@xterm/addon-fit` to automatically calculate how many columns and rows fit within the container element, keeping the terminal dimensions in sync with the layout.
+
+```bash
+npm install @xterm/addon-fit
+```
+
+```typescript
+import { FitAddon } from '@xterm/addon-fit';
+
+const fitAddon = new FitAddon();
+terminal.loadAddon(fitAddon);
+
+// Call after open()
+fitAddon.fit();
+
+// Re-fit on window resize
+window.addEventListener('resize', () => fitAddon.fit());
+```
+
+`fitAddon.fit()` updates `terminal.cols` and `terminal.rows`, which in turn fires `terminal.onResize`.
+
+</Step>
+
+</Steps>
+
+<Warning>
+If your terminal displays output from untrusted sources (user-supplied programs, shared sessions), be careful about what escape sequences you allow through. A malicious program can emit sequences that manipulate the browser environment if your application handles certain OSC sequences (such as OSC 8 hyperlinks) without validation. At a minimum, validate any URLs produced by an `ILinkHandler` to ensure they begin with `http://` or `https://` before activating them.
+</Warning>
+
+## Complete server example
+
+```typescript
+import * as pty from 'node-pty';
+import { WebSocketServer } from 'ws';
+
+const wss = new WebSocketServer({ port: 3000 });
+
+wss.on('connection', (ws) => {
+  const shell = process.platform === 'win32' ? 'cmd.exe' : (process.env.SHELL ?? 'bash');
+
+  const ptyProcess = pty.spawn(shell, [], {
+    name: 'xterm-256color',
+    cols: 80,
+    rows: 24,
+    cwd: process.env.HOME ?? process.env.USERPROFILE,
+    env: process.env as Record<string, string>,
+  });
+
+  ptyProcess.onData((data) => {
+    if (ws.readyState === ws.OPEN) ws.send(data);
+  });
+
+  ws.on('message', (raw) => {
+    try {
+      const msg = JSON.parse(raw.toString());
+      if (msg.type === 'data') ptyProcess.write(msg.data);
+      if (msg.type === 'resize') ptyProcess.resize(msg.cols, msg.rows);
+    } catch {
+      // ignore malformed messages
+    }
+  });
+
+  ws.on('close', () => ptyProcess.kill());
+});
+```

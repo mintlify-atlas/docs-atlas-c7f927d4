@@ -1,0 +1,97 @@
+---
+title: "Addons overview"
+description: "Extend xterm.js with official addons for rendering, search, clipboard, images, and more."
+---
+
+Addons are modular packages that extend xterm.js with additional capabilities. Each addon is distributed as a separate npm package so you only pay for what you use.
+
+## The addon system
+
+Every addon implements the `ITerminalAddon` interface from `@xterm/xterm`. Loading an addon is always the same two-step pattern: install the package, then call `terminal.loadAddon()`.
+
+```typescript
+import { Terminal } from '@xterm/xterm';
+import { SomeAddon } from '@xterm/addon-some';
+
+const terminal = new Terminal();
+terminal.open(containerElement);
+
+const addon = new SomeAddon();
+terminal.loadAddon(addon);
+```
+
+### ITerminalAddon interface
+
+The interface is minimal by design:
+
+```typescript
+interface ITerminalAddon {
+  activate(terminal: Terminal): void;
+  dispose(): void;
+}
+```
+
+`activate` is called automatically by `terminal.loadAddon()`. `dispose` is called when `terminal.dispose()` is called, or when you call `addon.dispose()` directly to unload the addon.
+
+### Building your own addon
+
+Anyone can build an addon. Implement `ITerminalAddon`, publish to npm, and consumers load it the same way as an official addon:
+
+```typescript
+import { Terminal, ITerminalAddon } from '@xterm/xterm';
+
+export class MyAddon implements ITerminalAddon {
+  private _terminal: Terminal | undefined;
+
+  activate(terminal: Terminal): void {
+    this._terminal = terminal;
+    // set up event listeners, write data, etc.
+  }
+
+  dispose(): void {
+    // clean up resources
+  }
+}
+```
+
+## Official addons
+
+<CardGroup cols={2}>
+  <Card title="Fit" icon="arrows-maximize" href="/addons/fit">
+    Resize the terminal to fill its container element automatically.
+  </Card>
+  <Card title="WebGL" icon="gpu-card" href="/addons/webgl">
+    GPU-accelerated rendering via WebGL2 for large, high-performance terminals.
+  </Card>
+  <Card title="Search" icon="magnifying-glass" href="/addons/search">
+    Find text in the terminal buffer with highlighted match decorations.
+  </Card>
+  <Card title="Web Links" icon="link" href="/addons/web-links">
+    Detect URLs in terminal output and make them clickable.
+  </Card>
+  <Card title="Attach" icon="plug" href="/addons/attach">
+    Attach the terminal bidirectionally to a WebSocket-backed process.
+  </Card>
+  <Card title="Serialize" icon="floppy-disk" href="/addons/serialize">
+    Serialize terminal buffer contents to VT sequences or styled HTML.
+  </Card>
+  <Card title="Clipboard" icon="clipboard" href="/addons/clipboard">
+    Read and write the system clipboard using the browser Clipboard API.
+  </Card>
+  <Card title="Image" icon="image" href="/addons/image">
+    Render inline images via SIXEL, iTerm2 IIP, and Kitty graphics protocols.
+  </Card>
+</CardGroup>
+
+## Package names
+
+| Addon | npm package |
+|-------|-------------|
+| Fit | `@xterm/addon-fit` |
+| WebGL | `@xterm/addon-webgl` |
+| Search | `@xterm/addon-search` |
+| Web Links | `@xterm/addon-web-links` |
+| Attach | `@xterm/addon-attach` |
+| Serialize | `@xterm/addon-serialize` |
+| Clipboard | `@xterm/addon-clipboard` |
+| Image | `@xterm/addon-image` |

@@ -1,0 +1,189 @@
+---
+title: "Unicode handling"
+description: "Register custom Unicode versions and switch active versions for correct character width calculation."
+---
+
+The Unicode handling API controls how xterm.js calculates the display width of characters — a critical factor for correct rendering of CJK characters, emoji, and ambiguous-width symbols. It is accessible via `terminal.unicode`.
+
+<Note>
+  The Unicode handling API is experimental. Set `allowProposedApi: true` in your terminal options to use it.
+</Note>
+
+## Background
+
+Terminal character rendering depends on knowing the display width of every Unicode code point — whether a character occupies one cell or two. This is defined by the Unicode standard's East Asian Width property and is version-dependent: the assigned widths of some characters change between Unicode versions.
+
+xterm.js ships with a built-in Unicode 6 implementation. To support newer Unicode versions, use an addon:
+
+- **`@xterm/addon-unicode11`** — Adds Unicode 11 support.
+- **`@xterm/addon-unicode-graphemes`** — Adds grapheme cluster support for accurate emoji and combining character handling.
+
+## IUnicodeHandling
+
+Accessible via `terminal.unicode`.
+
+<ResponseField name="activeVersion" type="string">
+  Gets or sets the currently active Unicode version. The version string must match one of the registered providers (see `versions`).
+
+  ```typescript
+  // Check the current version
+  console.log(term.unicode.activeVersion); // e.g., '6'
+
+  // Switch to Unicode 11 (after loading the addon)
+  term.unicode.activeVersion = '11';
+  ```
+</ResponseField>
+
+<ResponseField name="versions" type="ReadonlyArray<string>">
+  The list of registered Unicode version strings, in registration order. The built-in `'6'` is always present.
+
+  ```typescript
+  console.log(term.unicode.versions); // ['6', '11']
+  ```
+</ResponseField>
+
+<ResponseField name="register(provider)" type="void">
+  Registers a custom Unicode version provider.
+
+  <ParamField path="provider" type="IUnicodeVersionProvider" required>
+    An object implementing the `IUnicodeVersionProvider` interface.
+  </ParamField>
+</ResponseField>
+
+## IUnicodeVersionProvider
+
+Implement this interface to register a custom Unicode version.
+
+<ResponseField name="version" type="string">
+  A string identifying this Unicode version (e.g., `'11'`, `'15'`, `'graphemes'`).
+</ResponseField>
+
+<ResponseField name="wcwidth(codepoint)" type="0 | 1 | 2">
+  Returns the display width of a Unicode code point:
+  - `0` — zero-width (combining characters, etc.)
+  - `1` — normal width
+  - `2` — wide (CJK, full-width characters)
+
+  <ParamField path="codepoint" type="number" required>
+    The Unicode code point to measure.
+  </ParamField>
+</ResponseField>
+
+<ResponseField name="charProperties(codepoint, preceding)" type="number">
+  Returns a number encoding the character properties used for grapheme cluster boundary detection.
+
+  <ParamField path="codepoint" type="number" required>
+    The current code point.
+  </ParamField>
+  <ParamField path="preceding" type="number" required>
+    The preceding character properties value (as returned by a previous call to `charProperties`).
+  </ParamField>
+</ResponseField>
+
+## Using addon-unicode11
+
+The `@xterm/addon-unicode11` addon provides Unicode 11 character width tables, which include updated widths for many characters compared to Unicode 6.
+
+```typescript
+import { Terminal } from '@xterm/xterm';
+import { Unicode11Addon } from '@xterm/addon-unicode11';
+
+const term = new Terminal({ allowProposedApi: true });
+term.open(document.getElementById('terminal'));
+
+const unicode11Addon = new Unicode11Addon();
+term.loadAddon(unicode11Addon);
+
+// Switch to Unicode 11 after loading
+term.unicode.activeVersion = '11';
+```
+
+## Using addon-unicode-graphemes
+
+The `@xterm/addon-unicode-graphemes` addon implements Unicode grapheme cluster segmentation, which correctly handles multi-codepoint sequences such as emoji with skin tone modifiers, family emoji, and combining characters.
+
+```typescript
+import { Terminal } from '@xterm/xterm';
+import { UnicodeGraphemesAddon } from '@xterm/addon-unicode-graphemes';
+
+const term = new Terminal({ allowProposedApi: true });
+term.open(document.getElementById('terminal'));
+
+const graphemesAddon = new UnicodeGraphemesAddon();
+term.loadAddon(graphemesAddon);
+
+// The addon registers itself and sets the active version automatically
+console.log(term.unicode.versions); // [..., 'graphemes']
+term.unicode.activeVersion = 'graphemes';
+```
+
+## Writing a custom Unicode provider
+
+If you need a Unicode version not covered by the official addons, implement `IUnicodeVersionProvider` directly:
+
+```typescript
+import { Terminal, IUnicodeVersionProvider } from '@xterm/xterm';
+
+class MyUnicodeProvider implements IUnicodeVersionProvider {
+  readonly version = 'custom-15';
+
+  wcwidth(codepoint: number): 0 | 1 | 2 {
+    // Wide characters: CJK Unified Ideographs and common ranges
+    if (
+      (codepoint >= 0x1100 && codepoint <= 0x115F) || // Hangul Jamo
+      (codepoint >= 0x2E80 && codepoint <= 0x303E) || // CJK Radicals
+      (codepoint >= 0x3041 && codepoint <= 0x33FF) || // Japanese
+      (codepoint >= 0xAC00 && codepoint <= 0xD7A3) || // Hangul Syllables
+      (codepoint >= 0xFF01 && codepoint <= 0xFF60) || // Fullwidth Latin
+      (codepoint >= 0x1F300 && codepoint <= 0x1F9FF)  // Emoji
+    ) {
+      return 2;
+    }
+    // Zero-width combining characters
+    if (codepoint >= 0x0300 && codepoint <= 0x036F) {
+      return 0;
+    }
+    return 1;
+  }
+
+  charProperties(codepoint: number, preceding: number): number {
+    // Simplified — return 0 to disable grapheme clustering
+    return 0;
+  }
+}
+
+const term = new Terminal({ allowProposedApi: true });
+term.open(document.getElementById('terminal'));
+
+term.unicode.register(new MyUnicodeProvider());
+term.unicode.activeVersion = 'custom-15';
+```
+
+<Tip>
+  For production use, prefer the official addons. They are maintained alongside xterm.js and keep pace with Unicode standard updates.
+</Tip>
+
+## Switching versions at runtime
+
+The active Unicode version can be changed at any time. The change takes effect on the next render cycle.
+
+```typescript
+// Switch between versions dynamically, e.g., based on user preference
+document.getElementById('unicode-select').addEventListener('change', (e) => {
+  const version = (e.target as HTMLSelectElement).value;
+  if (term.unicode.versions.includes(version)) {
+    term.unicode.activeVersion = version;
+  }
+});
+```
+
+## Impact on rendering
+
+The Unicode version affects:
+
+1. **Cell width calculation** — wide characters occupy two cells. Incorrect widths cause misaligned output.
+2. **Cursor positioning** — the cursor advances by 1 or 2 depending on cell width.
+3. **Buffer API** — `IBufferCell.getWidth()` returns values derived from the active Unicode provider.
+4. **Selection** — text selection boundaries respect cell widths.
+
+Using an outdated Unicode version can cause rendering artifacts when applications output characters whose widths changed in a newer Unicode version. This is most visible with ambiguous-width characters (e.g., Roman numerals, box-drawing variants) and newer emoji.

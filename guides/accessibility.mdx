@@ -1,0 +1,150 @@
+---
+title: 'Accessibility'
+description: 'Enable screen reader support and contrast adjustment in xterm.js for WCAG compliance.'
+keywords: ['accessibility', 'screen reader', 'NVDA', 'VoiceOver', 'WCAG', 'contrast ratio', 'a11y']
+---
+
+xterm.js provides two primary mechanisms for improving accessibility: **screen reader mode**, which exposes terminal output to assistive technologies, and **minimum contrast ratio**, which adjusts foreground colors at render time to meet WCAG contrast thresholds.
+
+## Screen reader mode
+
+The `screenReaderMode` option enables an ARIA live region that announces terminal output to screen readers such as NVDA on Windows and VoiceOver on macOS and iOS.
+
+When enabled, xterm.js inserts additional DOM elements—including a visually-hidden `<textarea>` used as an accessible label and a live region that receives terminal output. These elements are not visible but are picked up by assistive technology.
+
+### Enabling at construction
+
+```typescript
+import { Terminal } from '@xterm/xterm';
+
+const terminal = new Terminal({
+  screenReaderMode: true,
+});
+```
+
+### Enabling at runtime
+
+```typescript
+terminal.options.screenReaderMode = true;
+```
+
+Disabling at runtime removes the supporting DOM elements:
+
+```typescript
+terminal.options.screenReaderMode = false;
+```
+
+<Note>
+Screen reader mode inserts a live region into the DOM that receives each line of terminal output. In high-throughput terminals (build logs, fast-scrolling output), the screen reader may be overwhelmed. The `tooMuchOutput` localization string is announced when output is suppressed to protect the user from an overload of announcements.
+</Note>
+
+## Minimum contrast ratio
+
+The `minimumContrastRatio` option causes xterm.js to dynamically adjust the foreground color of each cell at render time if the color pair does not meet the specified contrast ratio against the background.
+
+This is a numerical value from 1 to 21, matching the WCAG contrast ratio scale:
+
+| Value | Meaning |
+|---|---|
+| `1` | Default—no adjustment applied |
+| `4.5` | WCAG 2.1 Level AA (normal text) |
+| `7` | WCAG 2.1 Level AAA (normal text) |
+| `21` | Maximum contrast (black on white or white on black) |
+
+<Note>
+WCAG 2.1 Level AA requires a contrast ratio of at least 4.5:1 for normal text and 3:1 for large text. WCAG 2.1 Level AAA requires at least 7:1 for normal text. Setting `minimumContrastRatio` to `4.5` achieves AA compliance for all terminal text.
+</Note>
+
+### Enabling at construction
+
+```typescript
+const terminal = new Terminal({
+  minimumContrastRatio: 4.5, // WCAG AA
+});
+```
+
+### Enabling at runtime
+
+```typescript
+// Upgrade to WCAG AAA
+terminal.options.minimumContrastRatio = 7;
+
+// Disable adjustment
+terminal.options.minimumContrastRatio = 1;
+```
+
+### Combining with a theme
+
+Contrast adjustment operates on top of whatever theme colors are set. Even if your theme has a low-contrast color pair, xterm.js will shift the foreground toward black or white until the threshold is met.
+
+```typescript
+const terminal = new Terminal({
+  minimumContrastRatio: 4.5,
+  theme: {
+    background: '#1e1e2e',
+    foreground: '#cdd6f4',
+    // individual ANSI colors will also be adjusted if needed
+  },
+});
+```
+
+## Keyboard navigation
+
+xterm.js handles keyboard input through a hidden `<textarea>` element that receives focus when the terminal is clicked or `terminal.focus()` is called. Users can navigate to the terminal element with Tab and then interact with it using the keyboard normally.
+
+To intercept keystrokes before they reach the terminal (for custom keybindings or to block certain keys), use `attachCustomKeyEventHandler`:
+
+```typescript
+terminal.attachCustomKeyEventHandler((event: KeyboardEvent) => {
+  // Prevent Ctrl+W from closing the browser tab
+  if (event.ctrlKey && event.key === 'w') {
+    return false; // do not process this key in xterm.js
+  }
+  return true;
+});
+```
+
+Returning `false` prevents xterm.js from processing the event. Returning `true` passes it through normally.
+
+## Localization strings
+
+`Terminal.strings` is a static object of type `ILocalizableStrings` that controls the text exposed to screen readers. Override these strings to localize your application.
+
+| Property | Default purpose |
+|---|---|
+| `promptLabel` | ARIA label for the hidden textarea that receives keyboard input |
+| `tooMuchOutput` | Announced when line reading is suppressed due to high output volume |
+
+```typescript
+import { Terminal } from '@xterm/xterm';
+
+// Set before creating any Terminal instances
+Terminal.strings.promptLabel = 'Terminal input';
+Terminal.strings.tooMuchOutput = 'Too much output to read, output suppressed.';
+```
+
+These strings are static and apply to all `Terminal` instances in the page. Set them once, early in your application's startup.
+
+## Full accessible configuration example
+
+```typescript
+import { Terminal } from '@xterm/xterm';
+
+// Localize for a Spanish-language interface
+Terminal.strings.promptLabel = 'Entrada de terminal';
+Terminal.strings.tooMuchOutput = 'Demasiada salida, lectura suprimida.';
+
+const terminal = new Terminal({
+  screenReaderMode: true,
+  minimumContrastRatio: 4.5,
+  theme: {
+    background: '#ffffff',
+    foreground: '#1a1a1a',
+    cursor: '#1a1a1a',
+    selectionBackground: '#b3d4ff',
+  },
+  cursorBlink: false, // Reduce motion for users sensitive to animation
+});
+
+terminal.open(document.getElementById('terminal')!);
+```

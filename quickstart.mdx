@@ -1,80 +1,206 @@
 ---
 title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+description: "Get a working xterm.js terminal in your browser in under five minutes."
+keywords: ["xterm.js", "quickstart", "terminal", "browser", "getting started"]
 ---
 
-## Get started in three steps
+This guide takes you from zero to a working terminal in the browser. You will install xterm.js, render a terminal on the page, and connect it to a backend process.
 
-Get your documentation site running locally and make your first customization.
+## Before you start
 
-### Step 1: Set up your local environment
+You need Node.js and npm installed. The rest runs in the browser with a bundler (Vite, webpack, esbuild) or as a plain HTML file.
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+## Steps
 
-### Step 2: Deploy your changes
+<Steps>
+  <Step title="Install the package">
+    Install `@xterm/xterm` from npm. Also install `@xterm/addon-fit` to automatically size the terminal to its container.
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+    <CodeGroup>
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+    ```bash npm
+    npm install @xterm/xterm @xterm/addon-fit
+    ```
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+    ```bash yarn
+    yarn add @xterm/xterm @xterm/addon-fit
+    ```
 
-### Step 3: Go live
+    ```bash pnpm
+    pnpm add @xterm/xterm @xterm/addon-fit
+    ```
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+    </CodeGroup>
+  </Step>
 
-## Next steps
+  <Step title="Add a container element to your HTML">
+    xterm.js mounts into any `div`. Give it an explicit height — the terminal will fill the container.
 
-Now that you have your docs running, explore these key features:
+    ```html
+    <div id="terminal" style="height: 400px;"></div>
+    ```
+
+    <Note>
+      You must also include the xterm.js stylesheet. Without it, the terminal will not render correctly.
+
+      ```html
+      <link rel="stylesheet" href="node_modules/@xterm/xterm/css/xterm.css" />
+      ```
+
+      If you are using a bundler, import the CSS in your JavaScript entry point instead:
+
+      ```typescript
+      import '@xterm/xterm/css/xterm.css';
+      ```
+    </Note>
+  </Step>
+
+  <Step title="Create and open a Terminal instance">
+    Import `Terminal`, create an instance, and call `open` with the container element.
+
+    <Tabs>
+      <Tab title="TypeScript">
+        ```typescript
+        import { Terminal } from '@xterm/xterm';
+        import { FitAddon } from '@xterm/addon-fit';
+        import '@xterm/xterm/css/xterm.css';
+
+        const term = new Terminal();
+        const fitAddon = new FitAddon();
+
+        term.loadAddon(fitAddon);
+        term.open(document.getElementById('terminal')!);
+        fitAddon.fit();
+
+        term.write('Hello from \x1B[1;3;31mxterm.js\x1B[0m $ ');
+        ```
+      </Tab>
+      <Tab title="JavaScript">
+        ```javascript
+        import { Terminal } from '@xterm/xterm';
+        import { FitAddon } from '@xterm/addon-fit';
+        import '@xterm/xterm/css/xterm.css';
+
+        const term = new Terminal();
+        const fitAddon = new FitAddon();
+
+        term.loadAddon(fitAddon);
+        term.open(document.getElementById('terminal'));
+        fitAddon.fit();
+
+        term.write('Hello from \x1B[1;3;31mxterm.js\x1B[0m $ ');
+        ```
+      </Tab>
+    </Tabs>
+
+    `FitAddon.fit()` resizes the terminal to fill its container. Call it again whenever the container is resized (for example, inside a `ResizeObserver` or a window `resize` listener).
+  </Step>
+
+  <Step title="Connect to a backend process">
+    xterm.js on its own only renders output and captures keystrokes. To run real commands, connect it to a pseudoterminal (PTY) on the server. The standard approach is [node-pty](https://github.com/microsoft/node-pty) on the server and a WebSocket in between.
+
+    <Tabs>
+      <Tab title="TypeScript">
+        ```typescript
+        // Client side — wire xterm.js to a WebSocket
+        const socket = new WebSocket('ws://localhost:3000');
+
+        // Data from the server (PTY output) → write to terminal
+        socket.addEventListener('message', (event) => {
+          term.write(event.data);
+        });
+
+        // User input from the terminal → send to server (PTY input)
+        term.onData((data) => {
+          socket.send(data);
+        });
+        ```
+      </Tab>
+      <Tab title="JavaScript">
+        ```javascript
+        // Client side — wire xterm.js to a WebSocket
+        const socket = new WebSocket('ws://localhost:3000');
+
+        // Data from the server (PTY output) → write to terminal
+        socket.addEventListener('message', (event) => {
+          term.write(event.data);
+        });
+
+        // User input from the terminal → send to server (PTY input)
+        term.onData((data) => {
+          socket.send(data);
+        });
+        ```
+      </Tab>
+    </Tabs>
+
+    On the server, use node-pty to spawn a shell and bridge it to the WebSocket:
+
+    ```javascript
+    import * as pty from 'node-pty';
+    import { WebSocketServer } from 'ws';
+
+    const wss = new WebSocketServer({ port: 3000 });
+
+    wss.on('connection', (ws) => {
+      const ptyProcess = pty.spawn('bash', [], {
+        name: 'xterm-color',
+        cols: 80,
+        rows: 24,
+        env: process.env,
+      });
+
+      // PTY output → send to client
+      ptyProcess.onData((data) => ws.send(data));
+
+      // Client input → write to PTY
+      ws.on('message', (data) => ptyProcess.write(data.toString()));
+
+      ws.on('close', () => ptyProcess.kill());
+    });
+    ```
+
+    <Tip>
+      See the [Connecting a PTY](/guides/connecting-a-pty) guide for a complete working example including terminal resize handling.
+    </Tip>
+  </Step>
+</Steps>
+
+## Standalone HTML example
+
+If you are not using a bundler, you can load xterm.js directly from the `node_modules` folder or a CDN. Here is a complete self-contained HTML file from the xterm.js README:
+
+```html
+<!doctype html>
+<html>
+  <head>
+    <link rel="stylesheet" href="node_modules/@xterm/xterm/css/xterm.css" />
+    <script src="node_modules/@xterm/xterm/lib/xterm.js"></script>
+  </head>
+  <body>
+    <div id="terminal"></div>
+    <script>
+      const term = new Terminal();
+      term.open(document.getElementById('terminal'));
+      term.write('Hello from \x1B[1;3;31mxterm.js\x1B[0m $ ');
+    </script>
+  </body>
+</html>
+```
+
+## What's next
 
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="Installation" icon="box" href="/installation">
+    All install options: ESM, CommonJS, script tags, and headless Node.js
+  </Card>
+  <Card title="Connecting a PTY" icon="terminal" href="/guides/connecting-a-pty">
+    Full walkthrough for wiring xterm.js to a real shell
+  </Card>
+  <Card title="FitAddon" icon="expand" href="/addons/fit">
+    Automatically resize the terminal when its container changes
+  </Card>
+  <Card title="Theming" icon="palette" href="/guides/theming">
+    Customize colors, fonts, and cursor style
+  </Card>
 </CardGroup>
-
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>

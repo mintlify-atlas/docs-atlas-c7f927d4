@@ -1,0 +1,322 @@
+---
+title: "Events"
+description: "All events emitted by the xterm.js Terminal, and how to subscribe and unsubscribe from them."
+---
+
+Terminal events follow a consistent pattern using the `IEvent<T>` type. Each event is a property on the `Terminal` instance that is itself a function — call it with a listener to subscribe, and call `dispose()` on the returned `IDisposable` to unsubscribe.
+
+## The IEvent pattern
+
+```typescript
+interface IEvent<T, U = void> {
+  (listener: (arg1: T, arg2: U) => any): IDisposable;
+}
+```
+
+Subscribing returns an `IDisposable`. Always store it and call `.dispose()` when the listener is no longer needed to prevent memory leaks.
+
+```typescript
+// Subscribe
+const disposable = term.onData(data => {
+  pty.write(data);
+});
+
+// Unsubscribe later
+disposable.dispose();
+```
+
+<Tip>
+  Collect all disposables and dispose of them together when tearing down the terminal.
+
+  ```typescript
+  const disposables: IDisposable[] = [];
+  disposables.push(term.onData(data => pty.write(data)));
+  disposables.push(term.onResize(size => pty.resize(size.cols, size.rows)));
+
+  // On teardown:
+  disposables.forEach(d => d.dispose());
+  ```
+</Tip>
+
+## Events reference
+
+### onData
+
+```typescript
+onData: IEvent<string>
+```
+
+Fires when the user produces input — keystrokes, paste, or any other data entered into the terminal. The event value is the string that should be forwarded to the backing PTY or application.
+
+```typescript
+// Forward user input to a PTY
+term.onData(data => {
+  pty.write(data);
+});
+
+// Forward user input over a WebSocket
+term.onData(data => {
+  socket.send(JSON.stringify({ type: 'input', data }));
+});
+```
+
+<Note>
+  This is the primary event to use in a PTY-connected terminal. Every keystroke and paste produces one event.
+</Note>
+
+---
+
+### onBinary
+
+```typescript
+onBinary: IEvent<string>
+```
+
+Fires when a non-UTF-8 binary mouse report is received. The event value is a JS string — pass it to the PTY as binary data.
+
+```typescript
+term.onBinary(data => {
+  pty.write(Buffer.from(data, 'binary'));
+});
+```
+
+<Note>
+  This event exists because certain mouse reporting modes produce byte sequences that are not valid UTF-8. If you're using mouse mode with a PTY, subscribe to both `onData` and `onBinary`.
+</Note>
+
+---
+
+### onKey
+
+```typescript
+onKey: IEvent<{ key: string, domEvent: KeyboardEvent }>
+```
+
+Fires when a key is pressed. Provides both the string that would be sent to the application (`key`) and the raw DOM `KeyboardEvent`.
+
+```typescript
+term.onKey(({ key, domEvent }) => {
+  console.log('Key pressed:', domEvent.key, '→ sends:', JSON.stringify(key));
+});
+```
+
+---
+
+### onBell
+
+```typescript
+onBell: IEvent<void>
+```
+
+Fires when the terminal receives the bell character (`\x07`). Use this to implement visual or audio bell behavior in your application.
+
+```typescript
+term.onBell(() => {
+  // Flash the title bar
+  document.title = '🔔 ' + document.title;
+  setTimeout(() => {
+    document.title = document.title.replace('🔔 ', '');
+  }, 1000);
+});
+```
+
+---
+
+### onCursorMove
+
+```typescript
+onCursorMove: IEvent<void>
+```
+
+Fires when the cursor position changes.
+
+---
+
+### onLineFeed
+
+```typescript
+onLineFeed: IEvent<void>
+```
+
+Fires when a line feed (`\n`) is added to the terminal.
+
+---
+
+### onRender
+
+```typescript
+onRender: IEvent<{ start: number, end: number }>
+```
+
+Fires after rows are rendered. The event value contains the inclusive row range (`start` to `end`, 0-based) that was redrawn in the viewport.
+
+```typescript
+term.onRender(({ start, end }) => {
+  console.log(`Rows ${start}–${end} were re-rendered`);
+});
+```
+
+---
+
+### onWriteParsed
+
+```typescript
+onWriteParsed: IEvent<void>
+```
+
+Fires after data written via `write()` has been parsed by the terminal. This event fires at most once per animation frame, after parsing completes.
+
+Use this event to react to buffer changes after a write, since `write` is asynchronous and the buffer is not updated immediately.
+
+```typescript
+term.onWriteParsed(() => {
+  // Safe to read terminal.buffer here
+  const cursor = term.buffer.active;
+  console.log(`Cursor now at (${cursor.cursorX}, ${cursor.cursorY})`);
+});
+```
+
+<Note>
+  `onWriteParsed` can fire while writes are still pending if there is a large amount of data. It is not a guarantee that all queued writes have completed.
+</Note>
+
+---
+
+### onResize
+
+```typescript
+onResize: IEvent<{ cols: number, rows: number }>
+```
+
+Fires when the terminal is resized. Use this to propagate the new dimensions to your PTY.
+
+```typescript
+term.onResize(({ cols, rows }) => {
+  // Notify the PTY of the new size
+  pty.resize(cols, rows);
+
+  // Optionally update an SIGWINCH-based resize signal
+  console.log(`Terminal resized to ${cols}x${rows}`);
+});
+```
+
+---
+
+### onScroll
+
+```typescript
+onScroll: IEvent<number>
+```
+
+Fires when the viewport scrolls. The event value is the new `viewportY` position — the line number at the top of the visible viewport.
+
+```typescript
+term.onScroll(newViewportY => {
+  const isAtBottom = newViewportY === term.buffer.active.baseY;
+  setAutoScroll(isAtBottom);
+});
+```
+
+---
+
+### onSelectionChange
+
+```typescript
+onSelectionChange: IEvent<void>
+```
+
+Fires when the text selection changes. Use `term.getSelection()` inside the handler to get the selected text.
+
+```typescript
+term.onSelectionChange(() => {
+  const selected = term.getSelection();
+  if (selected) {
+    // Implement copy-on-select
+    navigator.clipboard.writeText(selected);
+  }
+});
+```
+
+---
+
+### onTitleChange
+
+```typescript
+onTitleChange: IEvent<string>
+```
+
+Fires when the terminal title changes via an OSC 0 or OSC 2 escape sequence. The event value is the new title string.
+
+```typescript
+term.onTitleChange(title => {
+  document.title = title;
+});
+```
+
+---
+
+### onDimensionsChange
+
+```typescript
+onDimensionsChange: IEvent<IRenderDimensions>
+```
+
+Fires when the terminal's pixel dimensions change (e.g., after a resize or font change). The event value is an `IRenderDimensions` object.
+
+```typescript
+term.onDimensionsChange(dimensions => {
+  console.log(
+    `Cell size: ${dimensions.css.cell.width}x${dimensions.css.cell.height}px`
+  );
+});
+```
+
+## Practical patterns
+
+### PTY integration
+
+Connect xterm.js to a PTY over a WebSocket with both text and binary mouse support:
+
+```typescript
+import { Terminal } from '@xterm/xterm';
+
+const term = new Terminal();
+term.open(document.getElementById('terminal'));
+
+const socket = new WebSocket('wss://example.com/pty');
+
+// PTY → terminal
+socket.addEventListener('message', event => {
+  term.write(event.data);
+});
+
+// Terminal → PTY (text input)
+const dataDisposable = term.onData(data => {
+  socket.send(data);
+});
+
+// Terminal → PTY (binary mouse reports)
+const binaryDisposable = term.onBinary(data => {
+  socket.send(data);
+});
+
+// Propagate resize to PTY
+const resizeDisposable = term.onResize(({ cols, rows }) => {
+  socket.send(JSON.stringify({ type: 'resize', cols, rows }));
+});
+
+// Sync browser tab title
+const titleDisposable = term.onTitleChange(title => {
+  document.title = title;
+});
+
+// Cleanup
+function teardown() {
+  dataDisposable.dispose();
+  binaryDisposable.dispose();
+  resizeDisposable.dispose();
+  titleDisposable.dispose();
+  term.dispose();
+  socket.close();
+}
+```

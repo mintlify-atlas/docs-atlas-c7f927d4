@@ -1,0 +1,165 @@
+---
+title: "Serialize addon"
+description: "Serialize terminal buffer contents to VT sequences or styled HTML."
+---
+
+The serialize addon converts the terminal's live buffer into a portable string. The primary use case is saving terminal state for reconnection — write the serialized VT sequences into a fresh terminal to restore the visual state exactly. It also supports serializing to HTML for clipboard operations.
+
+<Note>
+  This addon is marked experimental and is still under active development. The API may change between minor versions.
+</Note>
+
+## Installation
+
+```bash
+npm install @xterm/addon-serialize
+```
+
+## Basic usage
+
+```typescript
+import { Terminal } from '@xterm/xterm';
+import { SerializeAddon } from '@xterm/addon-serialize';
+
+const terminal = new Terminal();
+const serializeAddon = new SerializeAddon();
+terminal.loadAddon(serializeAddon);
+
+terminal.write('Hello, \x1b[32mworld\x1b[0m!\r\n', () => {
+  const snapshot = serializeAddon.serialize();
+  console.log(snapshot);
+});
+```
+
+## Saving and restoring state
+
+Serialize before the user closes a session, then restore by writing the snapshot into a new terminal. The cursor is repositioned automatically.
+
+```typescript
+// --- Save ---
+const snapshot = serializeAddon.serialize();
+sessionStorage.setItem('terminalSnapshot', snapshot);
+
+// --- Restore ---
+// Best done before terminal.open() to avoid rendering incomplete frames
+const saved = sessionStorage.getItem('terminalSnapshot');
+if (saved) {
+  // Write the snapshot into a terminal of the same size it was serialized from
+  terminal.write(saved);
+}
+```
+
+<Tip>
+  Restore the snapshot before calling `terminal.open()` when possible. Writing into an un-mounted terminal avoids rendering partially-restored frames and is more CPU-efficient.
+
+  Resize the terminal to its final dimensions _after_ restoring the snapshot. Serialization and restoration should use the same `cols`/`rows` to guarantee correct output.
+</Tip>
+
+## Serialize options
+
+```typescript
+const snapshot = serializeAddon.serialize({
+  scrollback: 100,        // how many scrollback rows to include
+  excludeModes: false,    // include terminal mode state (default: false)
+  excludeAltBuffer: false // include alternate screen buffer (default: false)
+});
+```
+
+### ISerializeOptions
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `range` | `ISerializeRange` | Serialize a specific row range. When set, `scrollback` is ignored. |
+| `scrollback` | `number` | Number of scrollback rows to include, counting from the bottom. Defaults to all available scrollback. |
+| `excludeModes` | `boolean` | Omit terminal mode escape sequences from the output. Default `false`. |
+| `excludeAltBuffer` | `boolean` | Omit the alternate screen buffer from the output. Default `false`. |
+
+### ISerializeRange
+
+Use `ISerializeRange` to serialize only a portion of the buffer:
+
+```typescript
+const snapshot = serializeAddon.serialize({
+  range: {
+    start: 0,   // IMarker or absolute row number (inclusive)
+    end: 49,    // IMarker or absolute row number (inclusive)
+  },
+});
+```
+
+`start` and `end` accept either an absolute row number or an `IMarker` returned from `terminal.registerMarker()`.
+
+## Serializing to HTML
+
+`serializeAsHTML()` produces an HTML string with inline styles reflecting the terminal's current colors. The result can be written to the clipboard as `text/html` so that pasted text retains its colors in supporting applications (email clients, Notion, etc.).
+
+```typescript
+const html = serializeAddon.serializeAsHTML({
+  scrollback: 50,
+  onlySelection: false,
+  includeGlobalBackground: true,
+});
+
+// Write to clipboard as HTML
+await navigator.clipboard.write([
+  new ClipboardItem({ 'text/html': new Blob([html], { type: 'text/html' }) }),
+]);
+```
+
+### IHTMLSerializeOptions
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `scrollback` | `number` | all | Number of scrollback rows to serialize, from the bottom. Ignored when `onlySelection` is `true`. |
+| `onlySelection` | `boolean` | `false` | Serialize only the currently selected text. |
+| `includeGlobalBackground` | `boolean` | `false` | Wrap the output in a container with the terminal's background color. |
+| `range` | `ISerializeBufferRange` | — | Explicit line/column range. Takes priority over `onlySelection`. |
+
+### ISerializeBufferRange
+
+```typescript
+interface ISerializeBufferRange {
+  startLine: number;
+  endLine: number;
+  startCol: number;
+}
+```
+
+## Use with @xterm/headless
+
+A common architecture is to run a headless terminal on the server for state management and a regular terminal in the browser for display:
+
+```typescript
+// Server-side (Node.js) — capture state with @xterm/headless
+import { Terminal as HeadlessTerminal } from '@xterm/headless';
+import { SerializeAddon } from '@xterm/addon-serialize';
+
+const headless = new HeadlessTerminal({ cols: 220, rows: 50 });
+const serialize = new SerializeAddon();
+headless.loadAddon(serialize);
+
+// ... write PTY data into headless terminal ...
+
+const snapshot = serialize.serialize();
+// Send snapshot to new client via WebSocket
+```
+
+```typescript
+// Client-side — restore into a visible terminal
+import { Terminal } from '@xterm/xterm';
+
+const terminal = new Terminal({ cols: 220, rows: 50 });
+terminal.write(snapshot); // restore before open() if possible
+terminal.open(containerElement);
+```
+
+## API reference
+
+### SerializeAddon
+
+| Member | Description |
+|--------|-------------|
+| `constructor()` | Creates a new serialize addon. |
+| `serialize(options?)` | Serializes the terminal buffer to a VT sequence string. |
+| `serializeAsHTML(options?)` | Serializes the terminal buffer to an HTML string with inline styles. |
+| `dispose()` | Disposes the addon. |

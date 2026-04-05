@@ -1,0 +1,156 @@
+---
+title: "Addon interface"
+description: "How to build and load xterm.js addons using ITerminalAddon and IDisposable."
+keywords: ["xterm", "addon", "ITerminalAddon", "IDisposable", "loadAddon", "activate", "dispose"]
+---
+
+Addons extend xterm.js terminals with additional functionality. An addon is any object that satisfies the `ITerminalAddon` interface. When you call `terminal.loadAddon(addon)`, xterm.js calls `addon.activate(terminal)`, passing the terminal instance. When the terminal is disposed, or when you dispose the addon manually, `addon.dispose()` is called.
+
+## ITerminalAddon
+
+`ITerminalAddon` extends `IDisposable` and requires two methods:
+
+<ParamField path="activate" type="(terminal: Terminal) => void" required>
+  Called immediately when the addon is loaded via `terminal.loadAddon()`. Use this to set up event listeners, register extensions, or attach any behavior to the terminal. The `terminal` argument is the live `Terminal` instance the addon is being loaded into.
+</ParamField>
+
+<ParamField path="dispose" type="() => void" required>
+  Called when the addon is torn down. Release all resources, unsubscribe all event listeners, and clean up any DOM or WebGL state created in `activate`. Failing to implement this correctly will cause memory leaks.
+</ParamField>
+
+## terminal.loadAddon()
+
+```typescript
+terminal.loadAddon(addon: ITerminalAddon): void
+```
+
+Loads an addon into a terminal instance. This calls `addon.activate(terminal)` synchronously. Addons can be loaded at any time after the `Terminal` is constructed, including before `terminal.open()`.
+
+```typescript
+import { Terminal } from '@xterm/xterm';
+import { FitAddon } from '@xterm/addon-fit';
+
+const terminal = new Terminal();
+const fitAddon = new FitAddon();
+
+// Load before or after open()
+terminal.loadAddon(fitAddon);
+terminal.open(document.getElementById('terminal'));
+
+fitAddon.fit();
+```
+
+## IDisposable
+
+Every addon implements `IDisposable`, which provides a single `dispose()` method.
+
+<ParamField path="dispose" type="() => void" required>
+  Releases the resource. After calling `dispose()`, the object must not be used again.
+</ParamField>
+
+All event-listening calls on a `Terminal` (such as `terminal.onData(...)`) also return an `IDisposable`. Store and call these disposables when your addon is torn down.
+
+## IDisposableWithEvent
+
+Some objects in xterm.js implement `IDisposableWithEvent`, which extends `IDisposable` with observable disposal state:
+
+<ParamField path="onDispose" type="IEvent<void>">
+  Fires when `dispose()` is called on this object. Subscribe to know when an external object has been released.
+</ParamField>
+
+<ParamField path="isDisposed" type="boolean">
+  `true` after `dispose()` has been called. Use this to guard against acting on an already-disposed resource.
+</ParamField>
+
+`IDisposableWithEvent` is used by `IMarker` and `IDecoration`, for example.
+
+## IEvent\<T\>
+
+`IEvent<T>` is the event type used throughout xterm.js (including on addons). It is a callable that registers a listener and returns an `IDisposable`:
+
+```typescript
+// IEvent<T> signature
+interface IEvent<T, U = void> {
+  (listener: (arg1: T, arg2: U) => any): IDisposable;
+}
+
+// Usage
+const disposable = terminal.onData((data: string) => {
+  console.log('received:', data);
+});
+
+// Later, to stop listening:
+disposable.dispose();
+```
+
+## Building a custom addon
+
+The pattern below shows the canonical way to build an addon that collects its own disposables and cleans them up correctly.
+
+```typescript
+import { Terminal, ITerminalAddon, IDisposable } from '@xterm/xterm';
+
+class MyAddon implements ITerminalAddon {
+  private _disposables: IDisposable[] = [];
+
+  public activate(terminal: Terminal): void {
+    // Register event listeners; store each returned IDisposable.
+    this._disposables.push(
+      terminal.onData(data => {
+        // Handle data from the user/pty.
+      })
+    );
+
+    this._disposables.push(
+      terminal.onResize(({ cols, rows }) => {
+        // React to terminal resize.
+      })
+    );
+  }
+
+  public dispose(): void {
+    // Dispose every listener in a single pass.
+    for (const d of this._disposables) {
+      d.dispose();
+    }
+    // Reset the array so disposed listeners can be GC'd.
+    this._disposables.length = 0;
+  }
+}
+
+// Usage
+const term = new Terminal();
+term.loadAddon(new MyAddon());
+```
+
+## allowProposedApi
+
+Some addon features rely on APIs that are marked as **experimental** in xterm.js. These are gated behind the `allowProposedApi` terminal option.
+
+<Warning>
+  Experimental APIs may change or be removed in minor or patch releases. Do not rely on them in production without pinning your xterm.js version.
+</Warning>
+
+```typescript
+const terminal = new Terminal({
+  allowProposedApi: true,
+});
+```
+
+Without `allowProposedApi: true`, calling a proposed API will throw at runtime. Check each addon's documentation to see whether it requires this flag.
+
+## Best practices
+
+**Collect all disposables.** Every `terminal.onXxx(...)` call returns an `IDisposable`. Push each one into an array in `activate()` and iterate that array in `dispose()`. This is the most reliable way to prevent listener leaks.
+
+**Guard against double-dispose.** If your addon may be disposed more than once, check `_disposables.length` before iterating, or use the `isDisposed` flag pattern if you implement `IDisposableWithEvent`.
+
+**Never hold the terminal after dispose.** Once `dispose()` is called, drop any stored reference to the `Terminal` instance to allow garbage collection.
+
+**Load addons after constructing the terminal.** While addons can be loaded before `terminal.open()`, most addons that interact with the DOM (such as WebGL renderers) require `open()` to have been called first.
+
+```typescript
+const terminal = new Terminal({ allowProposedApi: true });
+terminal.open(containerElement);  // open first for DOM-dependent addons
+terminal.loadAddon(new WebglAddon());
+```

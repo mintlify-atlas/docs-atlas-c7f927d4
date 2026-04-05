@@ -1,0 +1,135 @@
+---
+title: "Clipboard addon"
+description: "Read and write the system clipboard from xterm.js using OSC 52."
+---
+
+The clipboard addon handles [OSC 52](https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h3-Operating-System-Commands) escape sequences, which allow terminal applications to read and write the system clipboard. This is the standard mechanism used by terminal multiplexers (tmux, screen) and editors (Neovim, Helix) to copy text from remote sessions.
+
+## Installation
+
+```bash
+npm install @xterm/addon-clipboard
+```
+
+## Basic usage
+
+```typescript
+import { Terminal } from '@xterm/xterm';
+import { ClipboardAddon } from '@xterm/addon-clipboard';
+
+const terminal = new Terminal();
+const clipboardAddon = new ClipboardAddon();
+terminal.loadAddon(clipboardAddon);
+terminal.open(document.getElementById('terminal')!);
+```
+
+With no arguments, the addon uses the built-in `BrowserClipboardProvider`, which delegates to the [Clipboard API](https://developer.mozilla.org/en-US/docs/Web/API/Clipboard_API) (`navigator.clipboard`).
+
+<Warning>
+  The browser Clipboard API requires a [secure context](https://developer.mozilla.org/en-US/docs/Web/Security/Secure_Contexts) (`https://` or `localhost`) and the `clipboard-read` / `clipboard-write` permissions. Users may be prompted to grant permission on the first access. In contexts without clipboard access (e.g. cross-origin iframes), use a custom `IClipboardProvider`.
+</Warning>
+
+## ClipboardSelectionType
+
+OSC 52 supports two clipboard selection targets:
+
+| Value | Character | Description |
+|-------|-----------|-------------|
+| `ClipboardSelectionType.SYSTEM` | `c` | The system clipboard (Ctrl+C / Ctrl+V). |
+| `ClipboardSelectionType.PRIMARY` | `p` | The primary selection (middle-click paste on Linux/X11). |
+
+## Custom clipboard provider
+
+Provide a custom `IClipboardProvider` when the browser Clipboard API is unavailable or you need custom behavior — for example, in Electron apps that access the clipboard via IPC:
+
+```typescript
+import {
+  Terminal
+} from '@xterm/xterm';
+import {
+  ClipboardAddon,
+  IClipboardProvider,
+  ClipboardSelectionType,
+} from '@xterm/addon-clipboard';
+
+class ElectronClipboardProvider implements IClipboardProvider {
+  readText(selection: ClipboardSelectionType): Promise<string> {
+    // Call Electron's clipboard module via a preload bridge
+    return window.electronAPI.clipboardRead(selection);
+  }
+
+  writeText(selection: ClipboardSelectionType, text: string): Promise<void> {
+    return window.electronAPI.clipboardWrite(selection, text);
+  }
+}
+
+const terminal = new Terminal();
+const clipboardAddon = new ClipboardAddon(undefined, new ElectronClipboardProvider());
+terminal.loadAddon(clipboardAddon);
+```
+
+## Custom Base64 codec
+
+OSC 52 data is Base64-encoded. The addon ships with a `Base64` class that uses the browser's `btoa`/`atob`. If you need a different codec (for example, in a non-browser environment or for performance reasons), implement `IBase64` and pass it as the first argument:
+
+```typescript
+import { ClipboardAddon, IBase64 } from '@xterm/addon-clipboard';
+
+class NodeBase64 implements IBase64 {
+  encodeText(data: string): string {
+    return Buffer.from(data, 'utf-8').toString('base64');
+  }
+  decodeText(data: string): string {
+    return Buffer.from(data, 'base64').toString('utf-8');
+  }
+}
+
+const clipboardAddon = new ClipboardAddon(new NodeBase64());
+terminal.loadAddon(clipboardAddon);
+```
+
+## API reference
+
+### ClipboardAddon
+
+| Member | Description |
+|--------|-------------|
+| `constructor(base64?, provider?)` | Creates the addon. Both arguments are optional; defaults use `Base64` and `BrowserClipboardProvider`. |
+| `activate(terminal)` | Called automatically by `terminal.loadAddon()`. Registers the OSC 52 handler. |
+| `dispose()` | Removes the OSC 52 handler. |
+
+### BrowserClipboardProvider
+
+The default clipboard provider. Uses `navigator.clipboard.readText()` and `navigator.clipboard.writeText()`.
+
+| Member | Description |
+|--------|-------------|
+| `readText(selection)` | Reads text from the specified clipboard selection. Returns a `Promise<string>`. |
+| `writeText(selection, data)` | Writes text to the specified clipboard selection. Returns a `Promise<void>`. |
+
+### Base64
+
+The default Base64 codec. Uses `btoa` / `atob`.
+
+| Member | Description |
+|--------|-------------|
+| `encodeText(data)` | Encodes a UTF-8 string to Base64. |
+| `decodeText(data)` | Decodes a Base64 string to UTF-8. Throws if input is invalid Base64. |
+
+### IClipboardProvider
+
+```typescript
+interface IClipboardProvider {
+  readText(selection: ClipboardSelectionType): string | Promise<string>;
+  writeText(selection: ClipboardSelectionType, text: string): void | Promise<void>;
+}
+```
+
+### IBase64
+
+```typescript
+interface IBase64 {
+  encodeText(data: string): string;
+  decodeText(data: string): string;
+}
+```

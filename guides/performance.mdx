@@ -1,0 +1,189 @@
+---
+title: 'Performance'
+description: 'Optimize xterm.js rendering, memory use, and data throughput for production terminals.'
+keywords: ['performance', 'WebGL', 'renderer', 'scrollback', 'debounce', 'resize', 'write', 'batch']
+---
+
+xterm.js ships with a canvas-based renderer by default. For most use cases this is fast enough, but GPU-accelerated rendering, careful memory management, and awareness of how the write pipeline works can make a significant difference in demanding scenarios.
+
+## GPU-accelerated rendering with WebglAddon
+
+The `@xterm/addon-webgl` package replaces the default canvas renderer with a WebGL 2 renderer that draws glyphs to a GPU texture atlas. This reduces the CPU load for rendering—particularly on high-frequency data streams—and enables smoother scrolling.
+
+### When to use it
+
+- Long-running terminals with high-throughput output (build logs, tail -f, real-time data feeds)
+- Applications where smooth scrolling is important
+- Environments where the browser supports WebGL 2 (all modern evergreen browsers)
+
+### Installation and setup
+
+```bash
+npm install @xterm/addon-webgl
+```
+
+```typescript
+import { Terminal } from '@xterm/xterm';
+import { WebglAddon } from '@xterm/addon-webgl';
+
+const terminal = new Terminal();
+terminal.open(document.getElementById('terminal')!);
+
+const webglAddon = new WebglAddon();
+terminal.loadAddon(webglAddon);
+```
+
+The addon must be loaded *after* `terminal.open()` is called, because the WebGL context requires a mounted canvas element.
+
+<Tip>
+`WebglAddon` also accepts an options object. Set `customGlyphs: true` (the default) to have the renderer draw box-drawing characters, block elements, Powerline symbols, and Braille patterns as custom geometry rather than relying on the font, producing crisper continuous lines regardless of line height or letter spacing.
+</Tip>
+
+### Handling context loss
+
+WebGL contexts can be lost unexpectedly—a common trigger is the operating system resuming from sleep on certain GPU/driver combinations (notably Chromium with Nvidia drivers). Listen to `onContextLoss` and reload the addon:
+
+<Warning>
+If you do not handle `onContextLoss`, the terminal will go blank after a GPU context loss and will not recover automatically. Always add this listener in production.
+</Warning>
+
+```typescript
+webglAddon.onContextLoss(() => {
+  // Dispose the current addon and load a fresh one
+  webglAddon.dispose();
+  const replacement = new WebglAddon();
+  terminal.loadAddon(replacement);
+});
+```
+
+If the terminal renders corrupted glyphs (a known issue after OS sleep on some hardware), call `clearTextureAtlas` to force a full redraw:
+
+```typescript
+// On Terminal (clears the WebGL texture atlas):
+terminal.clearTextureAtlas();
+
+// Or on the addon directly:
+webglAddon.clearTextureAtlas();
+```
+
+## Resize debouncing
+
+`terminal.resize(cols, rows)` and the associated `onResize` event can fire many times per second when the user drags the browser window edge. Each resize event should be forwarded to the server PTY, but doing so synchronously on every event can overwhelm the PTY and cause flickering.
+
+The `Terminal.resize` documentation recommends debouncing:
+
+```typescript
+function debounce<T extends (...args: any[]) => void>(fn: T, waitMs: number): T {
+  let timer: ReturnType<typeof setTimeout>;
+  return ((...args: any[]) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), waitMs);
+  }) as T;
+}
+
+const debouncedResize = debounce(({ cols, rows }: { cols: number; rows: number }) => {
+  // Send to server
+  socket.send(JSON.stringify({ type: 'resize', cols, rows }));
+}, 50);
+
+terminal.onResize(debouncedResize);
+```
+
+A 50 ms window is a reasonable default. This allows the PTY to process one resize event before the next is fired, preventing cascading layout recalculations.
+
+## Writing data efficiently
+
+`terminal.write()` is **asynchronous and batched**. Data is queued internally and processed in chunks on the next animation frame, rather than synchronously. This keeps the UI responsive under bursts of output.
+
+```typescript
+// Write is fire-and-forget — the buffer will not reflect the change immediately
+terminal.write('Hello, world!');
+
+// Use the callback to know when the data has been parsed and the buffer updated
+terminal.write('Hello, world!', () => {
+  // Safe to read terminal.buffer.active here
+  const line = terminal.buffer.active.getLine(terminal.buffer.active.cursorY);
+  console.log('Line content:', line?.translateToString());
+});
+```
+
+<Tip>
+If you are writing large amounts of data and need to know when it has all been processed (for example, before taking a snapshot with `@xterm/addon-serialize`), use the `callback` parameter or listen to the `onWriteParsed` event.
+</Tip>
+
+```typescript
+// onWriteParsed fires at most once per frame after data parsing completes
+terminal.onWriteParsed(() => {
+  // The buffer reflects all writes that were processed in this frame
+});
+```
+
+When writing binary data from a PTY, you can pass a `Uint8Array` directly. Raw bytes are treated as UTF-8:
+
+```typescript
+ptyProcess.onData((data) => {
+  // data is a string from node-pty; encode to Uint8Array for efficiency
+  terminal.write(new TextEncoder().encode(data));
+});
+```
+
+## Scrollback buffer size
+
+The `scrollback` option sets how many rows are retained above the visible viewport. The default is `1000`. For terminals that run long-lived processes producing thousands of lines, this can consume a significant amount of memory.
+
+```typescript
+const terminal = new Terminal({
+  scrollback: 5000,  // retain more history
+});
+```
+
+```typescript
+const terminal = new Terminal({
+  scrollback: 500,  // reduce memory for short-lived or embedded terminals
+});
+```
+
+<Tip>
+For terminals embedded in small UI panels or dashboards, reduce `scrollback` to 200–500 lines. For developer terminals where users need to scroll back through long build output, 5000–10000 is appropriate.
+</Tip>
+
+## Rescaling overlapping glyphs (GB18030)
+
+Some characters—particularly ambiguous-width Unicode codepoints like the Roman numeral characters (U+2160 and above)—are declared as single-cell wide by the Unicode standard but rendered wider than a single cell by most fonts. In terminals this causes characters to visually overlap.
+
+The `rescaleOverlappingGlyphs` option horizontally squishes such glyphs to fit within their allocated cell:
+
+```typescript
+const terminal = new Terminal({
+  rescaleOverlappingGlyphs: true,
+});
+```
+
+This is required for GB18030 compliance. Note that it does not apply to emoji, Powerline glyphs, or Nerd Font glyphs—those are always rendered at their natural width.
+
+<Warning>
+`rescaleOverlappingGlyphs` does not work with the DOM renderer. It requires the canvas or WebGL renderer.
+</Warning>
+
+## EOL conversion for non-PTY sources
+
+When writing data from a source that uses bare `\n` line endings (rather than the `\r\n` that a PTY produces), enable `convertEol`:
+
+```typescript
+const terminal = new Terminal({
+  convertEol: true,
+});
+```
+
+This makes xterm.js treat every `\n` as `\r\n`, moving the cursor to the beginning of the next line. Do not enable this when connected to a real PTY—the PTY's `termios` settings already handle the translation.
+
+## Summary of performance options
+
+| Option | Recommendation |
+|---|---|
+| `@xterm/addon-webgl` | Use for high-throughput or long-running terminals |
+| Resize debouncing | Always debounce `onResize` forwarding to the PTY |
+| `write()` callback | Use when buffer state must be read after a write |
+| `scrollback` | Tune to the use case; lower for embedded panels |
+| `rescaleOverlappingGlyphs` | Enable when GB18030 or ambiguous-width compliance is needed |
+| `convertEol` | Enable only for non-PTY data sources |

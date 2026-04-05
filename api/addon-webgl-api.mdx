@@ -1,0 +1,212 @@
+---
+title: "WebGL addon API"
+description: "API reference for WebglAddon from @xterm/addon-webgl — hardware-accelerated rendering via WebGL."
+keywords: ["xterm", "WebglAddon", "webgl", "addon", "renderer", "texture atlas", "context loss"]
+---
+
+`WebglAddon` replaces xterm.js's default canvas renderer with a hardware-accelerated WebGL renderer. It delivers significantly better performance for high-throughput terminals by rendering glyphs from a texture atlas on the GPU.
+
+## Installation
+
+<Tabs>
+  <Tab title="npm">
+    ```bash
+    npm install @xterm/addon-webgl
+    ```
+  </Tab>
+  <Tab title="yarn">
+    ```bash
+    yarn add @xterm/addon-webgl
+    ```
+  </Tab>
+</Tabs>
+
+## Constructor
+
+```typescript
+new WebglAddon(options?: IWebglAddonOptions)
+```
+
+Creates a new `WebglAddon` instance. Pass the instance to `terminal.loadAddon()` to activate it. The terminal must have been opened (via `terminal.open()`) before loading this addon.
+
+```typescript
+import { Terminal } from '@xterm/xterm';
+import { WebglAddon } from '@xterm/addon-webgl';
+
+const terminal = new Terminal();
+terminal.open(document.getElementById('terminal'));
+
+const webglAddon = new WebglAddon();
+terminal.loadAddon(webglAddon);
+```
+
+## IWebglAddonOptions
+
+Options passed to the `WebglAddon` constructor.
+
+<ParamField path="customGlyphs" type="boolean" default="true">
+  When `true`, xterm.js renders the following Unicode ranges itself instead of relying on the loaded font. This produces continuous, pixel-perfect lines even when non-zero `letterSpacing` or `lineHeight` is configured:
+
+  - Box Drawing (U+2500–U+257F)
+  - Block Elements (U+2580–U+259F)
+  - Braille Patterns (U+2800–U+28FF)
+  - Powerline Symbols (U+E0A0–U+E0D4, Private Use Area)
+  - Progress Indicators (U+EE00–U+EE0B, as adopted by Nerd Fonts)
+  - Git Branch Symbols (U+F5D0–U+F60D, Private Use Area)
+  - Symbols for Legacy Computing (U+1FB00–U+1FBFF)
+
+  Set to `false` only if your font already covers these ranges and you want its exact rendering.
+</ParamField>
+
+<ParamField path="preserveDrawingBuffer" type="boolean" default="false">
+  Passes `preserveDrawingBuffer: true` to the `WebGLRenderingContext`. When enabled, rendered frames persist in the buffer until explicitly cleared, which allows `canvas.toDataURL()` to capture the terminal output. This has a performance cost and is primarily useful for testing or screenshot tooling.
+</ParamField>
+
+## Properties
+
+<ParamField path="textureAtlas" type="HTMLCanvasElement | undefined">
+  The `<canvas>` element that holds the current texture atlas. Each unique glyph rendered by the terminal is rasterized into this atlas. The value is `undefined` before the addon is activated. Use this to inspect or export the atlas for debugging.
+
+  ```typescript
+  const atlas = webglAddon.textureAtlas;
+  if (atlas) {
+    document.body.appendChild(atlas); // preview the atlas
+  }
+  ```
+</ParamField>
+
+## Events
+
+All events follow the `IEvent<T>` pattern: call the event property as a function with a listener callback, and it returns an `IDisposable` you can use to unsubscribe.
+
+```typescript
+const disposable = webglAddon.onContextLoss(() => { /* ... */ });
+// Later:
+disposable.dispose();
+```
+
+<ParamField path="onContextLoss" type="IEvent<void>">
+  Fires when the WebGL rendering context is lost. A context loss can happen when the GPU is reset, when the browser tab is backgrounded for an extended period, or when too many WebGL contexts exist simultaneously.
+
+  On context loss, the addon stops rendering. The recommended recovery strategy is to dispose the current addon instance and load a new one:
+
+  ```typescript
+  webglAddon.onContextLoss(() => {
+    webglAddon.dispose();
+    terminal.loadAddon(new WebglAddon());
+  });
+  ```
+</ParamField>
+
+<ParamField path="onChangeTextureAtlas" type="IEvent<HTMLCanvasElement>">
+  Fires when the texture atlas canvas is replaced entirely with a new one. The event value is the new `HTMLCanvasElement`. This can happen when the renderer rebuilds the atlas from scratch (for example, after `clearTextureAtlas()` or when the font changes).
+</ParamField>
+
+<ParamField path="onAddTextureAtlasCanvas" type="IEvent<HTMLCanvasElement>">
+  Fires when a new page is appended to the texture atlas. The WebGL renderer uses a multi-page atlas when the number of distinct glyphs exceeds what fits on a single canvas. The event value is the newly added `HTMLCanvasElement`.
+</ParamField>
+
+<ParamField path="onRemoveTextureAtlasCanvas" type="IEvent<HTMLCanvasElement>">
+  Fires when a page is removed from the texture atlas. The event value is the `HTMLCanvasElement` that was removed.
+</ParamField>
+
+## Methods
+
+### activate
+
+```typescript
+activate(terminal: Terminal): void
+```
+
+Called automatically by `terminal.loadAddon()`. Do not call this directly.
+
+### dispose
+
+```typescript
+dispose(): void
+```
+
+Tears down the WebGL renderer and releases all GPU resources. After calling `dispose()`, the terminal falls back to its default canvas renderer. Call this when you no longer need hardware-accelerated rendering or when recovering from a context loss event.
+
+### clearTextureAtlas
+
+```typescript
+clearTextureAtlas(): void
+```
+
+Clears the texture atlas and forces all glyphs to be redrawn. This is useful as a workaround for GPU driver bugs that cause atlas corruption — for example, a known Chromium/NVIDIA issue where the texture becomes corrupted after the OS resumes from sleep.
+
+```typescript
+// Workaround for atlas corruption after OS wake
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) {
+    webglAddon.clearTextureAtlas();
+  }
+});
+```
+
+<Note>
+  `clearTextureAtlas()` is also available directly on the `Terminal` instance as `terminal.clearTextureAtlas()`, which forwards the call to the active WebGL renderer if one is loaded.
+</Note>
+
+## Handling context loss
+
+WebGL contexts can be lost at any time. Always attach an `onContextLoss` listener when loading the addon:
+
+```typescript
+import { Terminal } from '@xterm/xterm';
+import { WebglAddon } from '@xterm/addon-webgl';
+
+function loadWebglAddon(terminal: Terminal): WebglAddon {
+  const addon = new WebglAddon();
+
+  addon.onContextLoss(() => {
+    // Dispose the lost addon and reload a fresh one.
+    addon.dispose();
+    loadWebglAddon(terminal);
+  });
+
+  terminal.loadAddon(addon);
+  return addon;
+}
+
+const terminal = new Terminal();
+terminal.open(document.getElementById('terminal'));
+loadWebglAddon(terminal);
+```
+
+<Warning>
+  If you do not handle context loss, the terminal will stop rendering when the WebGL context is lost and will not automatically recover.
+</Warning>
+
+## Full example
+
+```typescript
+import { Terminal } from '@xterm/xterm';
+import { WebglAddon } from '@xterm/addon-webgl';
+
+const terminal = new Terminal({
+  fontFamily: 'JetBrains Mono, monospace',
+  fontSize: 14,
+});
+
+terminal.open(document.getElementById('terminal'));
+
+const webglAddon = new WebglAddon({
+  customGlyphs: true,       // pixel-perfect box drawing and Powerline
+  preserveDrawingBuffer: false,
+});
+
+// Recover from GPU context loss automatically.
+webglAddon.onContextLoss(() => {
+  webglAddon.dispose();
+  terminal.loadAddon(new WebglAddon({ customGlyphs: true }));
+});
+
+// Optionally observe atlas changes for debugging.
+webglAddon.onChangeTextureAtlas(canvas => {
+  console.log('texture atlas rebuilt', canvas.width, canvas.height);
+});
+
+terminal.loadAddon(webglAddon);
+```

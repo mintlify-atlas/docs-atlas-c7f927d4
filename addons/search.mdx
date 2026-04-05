@@ -1,0 +1,181 @@
+---
+title: "Search addon"
+description: "Find text in the terminal buffer with highlighted match decorations and an overview ruler."
+---
+
+The search addon lets users search the terminal's scrollback buffer. It highlights all matches with configurable colors and an overview ruler so users can see where matches are distributed across the entire buffer.
+
+## Installation
+
+```bash
+npm install @xterm/addon-search
+```
+
+## Basic usage
+
+```typescript
+import { Terminal } from '@xterm/xterm';
+import { SearchAddon } from '@xterm/addon-search';
+
+const terminal = new Terminal();
+const searchAddon = new SearchAddon();
+terminal.loadAddon(searchAddon);
+
+// Move to the next match
+searchAddon.findNext('error');
+
+// Move to the previous match
+searchAddon.findPrevious('error');
+```
+
+`findNext` and `findPrevious` both return `true` if a match was found, `false` otherwise.
+
+## Search options
+
+Pass an `ISearchOptions` object as the second argument to `findNext` or `findPrevious`:
+
+```typescript
+searchAddon.findNext('TypeError', {
+  caseSensitive: false,
+  wholeWord: false,
+  regex: false,
+  incremental: false,
+  decorations: {
+    matchBackground: '#ffff0040',
+    matchBorder: '#ffff00',
+    matchOverviewRuler: '#ffff00',
+    activeMatchBackground: '#ff000080',
+    activeMatchBorder: '#ff0000',
+    activeMatchColorOverviewRuler: '#ff0000',
+  },
+});
+```
+
+### ISearchOptions
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `regex` | `boolean` | Treat the search term as a regular expression. |
+| `wholeWord` | `boolean` | Match whole words only (surrounded by non-word characters). |
+| `caseSensitive` | `boolean` | Case-sensitive matching. |
+| `incremental` | `boolean` | Expand the current selection if it still matches, rather than jumping to the next match. Only affects `findNext`. |
+| `decorations` | `ISearchDecorationOptions` | Visual highlight options. When omitted, matches are selected but not highlighted. |
+
+### ISearchDecorationOptions
+
+| Option | Type | Required | Description |
+|--------|------|----------|-------------|
+| `matchBackground` | `string` | No | Background color of non-active matches (`#RRGGBB`). |
+| `matchBorder` | `string` | No | Border color of non-active matches. |
+| `matchOverviewRuler` | `string` | **Yes** | Overview ruler color for non-active matches. |
+| `activeMatchBackground` | `string` | No | Background color of the currently active match (`#RRGGBB`). |
+| `activeMatchBorder` | `string` | No | Border color of the currently active match. |
+| `activeMatchColorOverviewRuler` | `string` | **Yes** | Overview ruler color for the active match. |
+
+<Note>
+  `matchOverviewRuler` and `activeMatchColorOverviewRuler` are required when `decorations` is provided. The overview ruler must be enabled on the terminal (`overviewRulerWidth` option) for these colors to be visible.
+</Note>
+
+## Addon options
+
+Pass `ISearchAddonOptions` to the `SearchAddon` constructor:
+
+```typescript
+const searchAddon = new SearchAddon({
+  highlightLimit: 1000,  // default
+});
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `highlightLimit` | `number` | `1000` | Maximum number of matches highlighted simultaneously when decorations are enabled. |
+
+## Clearing decorations
+
+```typescript
+// Remove all match highlights and the selection
+searchAddon.clearDecorations();
+
+// Remove only the active-match decoration (reveals the underlying selection)
+// Call this on the search input's blur event
+searchAddon.clearActiveDecoration();
+```
+
+## Events
+
+| Event | Payload | Description |
+|-------|---------|-------------|
+| `onBeforeSearch` | `void` | Fires immediately before a search is performed. |
+| `onAfterSearch` | `void` | Fires immediately after a search is performed. |
+| `onDidChangeResults` | `ISearchResultChangeEvent` | Fires when the number of results changes (requires decorations). |
+
+### ISearchResultChangeEvent
+
+```typescript
+interface ISearchResultChangeEvent {
+  resultIndex: number;  // 0-based index of the active match; -1 if limit exceeded
+  resultCount: number;  // total number of matches found
+}
+```
+
+## Practical search UI example
+
+```typescript
+import { Terminal } from '@xterm/xterm';
+import { SearchAddon, ISearchOptions } from '@xterm/addon-search';
+
+const terminal = new Terminal({ overviewRulerWidth: 15 });
+const searchAddon = new SearchAddon();
+terminal.loadAddon(searchAddon);
+
+const searchInput = document.getElementById('search-input') as HTMLInputElement;
+const resultLabel = document.getElementById('result-label') as HTMLSpanElement;
+
+const decorations: ISearchOptions['decorations'] = {
+  matchBackground: '#ffff0054',
+  matchBorder: '#ffff00',
+  matchOverviewRuler: '#ffff00cc',
+  activeMatchBackground: '#ff634780',
+  activeMatchBorder: '#ff6347',
+  activeMatchColorOverviewRuler: '#ff6347cc',
+};
+
+function search(direction: 'next' | 'prev'): void {
+  const term = searchInput.value;
+  if (!term) return;
+  const opts: ISearchOptions = { caseSensitive: false, decorations };
+  if (direction === 'next') searchAddon.findNext(term, opts);
+  else searchAddon.findPrevious(term, opts);
+}
+
+searchAddon.onDidChangeResults(({ resultIndex, resultCount }) => {
+  if (resultCount === 0) {
+    resultLabel.textContent = 'No results';
+  } else if (resultIndex === -1) {
+    resultLabel.textContent = `>${searchAddon['_options']?.highlightLimit ?? 1000} results`;
+  } else {
+    resultLabel.textContent = `${resultIndex + 1} of ${resultCount}`;
+  }
+});
+
+searchInput.addEventListener('input', () => search('next'));
+searchInput.addEventListener('blur', () => searchAddon.clearActiveDecoration());
+
+document.getElementById('find-next')!.addEventListener('click', () => search('next'));
+document.getElementById('find-prev')!.addEventListener('click', () => search('prev'));
+```
+
+## API reference
+
+### SearchAddon
+
+| Member | Description |
+|--------|-------------|
+| `constructor(options?)` | Creates a new search addon with optional `ISearchAddonOptions`. |
+| `findNext(term, options?)` | Search forward; returns `true` if a match was found. |
+| `findPrevious(term, options?)` | Search backward; returns `true` if a match was found. |
+| `clearDecorations()` | Removes all match highlights and the selection. |
+| `clearActiveDecoration()` | Removes only the active-match highlight, revealing the selection. |
+| `onBeforeSearch` | Event fired before each search. |
+| `onAfterSearch` | Event fired after each search. |
+| `onDidChangeResults` | Event fired when results change (decorations must be enabled). |

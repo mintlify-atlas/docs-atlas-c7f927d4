@@ -1,0 +1,148 @@
+---
+title: "WebGL addon"
+description: "GPU-accelerated terminal rendering via WebGL2."
+---
+
+The WebGL addon replaces xterm.js's default canvas renderer with a WebGL2-based renderer. For large terminals with high throughput, GPU rendering is substantially faster and produces crisper glyphs.
+
+## Installation
+
+```bash
+npm install @xterm/addon-webgl
+```
+
+## Basic usage
+
+<Steps>
+  <Step title="Import and open the terminal">
+    ```typescript
+    import { Terminal } from '@xterm/xterm';
+    import { WebglAddon } from '@xterm/addon-webgl';
+
+    const terminal = new Terminal();
+    terminal.open(document.getElementById('terminal')!);
+    ```
+
+    The terminal must be opened before loading the WebGL addon so that the DOM element is available for canvas creation.
+  </Step>
+  <Step title="Load the addon">
+    ```typescript
+    const webglAddon = new WebglAddon();
+    terminal.loadAddon(webglAddon);
+    ```
+  </Step>
+</Steps>
+
+## Options
+
+Pass an `IWebglAddonOptions` object to the constructor to configure the renderer:
+
+```typescript
+const webglAddon = new WebglAddon({
+  customGlyphs: true,        // default: true
+  preserveDrawingBuffer: false, // default: false
+});
+```
+
+### customGlyphs
+
+When `true` (the default), the renderer draws the following unicode ranges itself rather than relying on the font:
+
+| Range | Description |
+|-------|-------------|
+| U+2500–U+257F | Box Drawing |
+| U+2580–U+259F | Block Elements |
+| U+2800–U+28FF | Braille Patterns |
+| U+E0A0–U+E0D4 | Powerline Symbols (Private Use Area) |
+| U+EE00–U+EE0B | Progress Indicators / Nerd Fonts (Private Use Area) |
+| U+F5D0–U+F60D | Git Branch Symbols (Private Use Area) |
+| U+1FB00–U+1FBFF | Symbols for Legacy Computing |
+
+Custom glyphs produce continuous lines even when `lineHeight` and `letterSpacing` are non-default, which is the main reason to keep this enabled.
+
+### preserveDrawingBuffer
+
+When `true`, the WebGL context is created with `preserveDrawingBuffer`. This is primarily useful in automated tests that screenshot the canvas. Leave it `false` in production — it disables certain driver-level optimisations.
+
+## Handling context loss
+
+<Warning>
+  The browser can drop a WebGL context at any time — for example when the system runs out of GPU memory, or after the device wakes from sleep. You **must** handle `onContextLoss`, otherwise the terminal will go blank.
+
+  The simplest recovery is to dispose the addon. xterm.js will fall back to the canvas renderer automatically:
+
+  ```typescript
+  const webglAddon = new WebglAddon();
+  webglAddon.onContextLoss(() => {
+    webglAddon.dispose();
+  });
+  terminal.loadAddon(webglAddon);
+  ```
+
+  For a more seamless experience, re-create and re-load the addon after a short delay:
+
+  ```typescript
+  function loadWebgl(terminal: Terminal): void {
+    const addon = new WebglAddon();
+    addon.onContextLoss(() => {
+      addon.dispose();
+      setTimeout(() => loadWebgl(terminal), 500);
+    });
+    terminal.loadAddon(addon);
+  }
+  ```
+</Warning>
+
+## Events
+
+| Event | Payload | Description |
+|-------|---------|-------------|
+| `onContextLoss` | `void` | Fires when the WebGL context is lost. |
+| `onChangeTextureAtlas` | `HTMLCanvasElement` | Fires when the texture atlas canvas is replaced. |
+| `onAddTextureAtlasCanvas` | `HTMLCanvasElement` | Fires when a new page is added to the texture atlas. |
+| `onRemoveTextureAtlasCanvas` | `HTMLCanvasElement` | Fires when a page is removed from the texture atlas. |
+
+```typescript
+webglAddon.onChangeTextureAtlas((canvas) => {
+  console.log('Texture atlas changed', canvas.width, canvas.height);
+});
+```
+
+## Texture atlas
+
+The renderer packs glyph bitmaps into a texture atlas (one or more `HTMLCanvasElement` pages) for efficient GPU uploads.
+
+### textureAtlas property
+
+```typescript
+const atlasCanvas: HTMLCanvasElement | undefined = webglAddon.textureAtlas;
+```
+
+The `textureAtlas` property gives you access to the current atlas canvas. This is useful for debugging rendering issues.
+
+### clearTextureAtlas()
+
+On some Chromium/Nvidia combinations, glyph textures can become corrupted after the system returns from sleep. `clearTextureAtlas()` discards all cached glyph bitmaps and triggers a full redraw, which is an effective workaround:
+
+```typescript
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    webglAddon.clearTextureAtlas();
+  }
+});
+```
+
+## API reference
+
+### WebglAddon
+
+| Member | Description |
+|--------|-------------|
+| `constructor(options?)` | Creates a new WebGL addon with optional `IWebglAddonOptions`. |
+| `textureAtlas` | The current texture atlas `HTMLCanvasElement`, or `undefined` before activation. |
+| `onContextLoss` | Event fired when the WebGL context is lost. |
+| `onChangeTextureAtlas` | Event fired when the texture atlas canvas changes. |
+| `onAddTextureAtlasCanvas` | Event fired when a canvas page is added to the atlas. |
+| `onRemoveTextureAtlasCanvas` | Event fired when a canvas page is removed from the atlas. |
+| `clearTextureAtlas()` | Clears the texture atlas and triggers a redraw. |
+| `dispose()` | Disposes the addon, reverting to the default canvas renderer. |
